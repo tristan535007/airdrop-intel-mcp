@@ -4,7 +4,7 @@
  */
 
 import { searchProjects, getProjectBySlug, getUpcomingSnapshots } from "./lib/airdrop-data.js";
-import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey } from "./lib/db.js";
+import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser } from "./lib/db.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 
 // ============================================================================
@@ -86,7 +86,7 @@ export function trackWallet(address: string, projectId: string, userId: string) 
     return { success: false, message: `Project "${projectId}" not found. Use search_airdrops to find valid project IDs.`, upgrade_required: false };
   }
 
-  const user = getOrCreateUserByMcpizeKey(userId);
+  const user = getOrCreateUser(userId);
   const result = addTrackedWallet(user.id, address, projectId);
 
   return {
@@ -104,7 +104,7 @@ export function trackWallet(address: string, projectId: string, userId: string) 
 // ============================================================================
 
 export function getWalletStatus(userId: string, walletAddress?: string) {
-  const user = getOrCreateUserByMcpizeKey(userId);
+  const user = getOrCreateUser(userId);
   const tracked = getTrackedWallets(user.id);
   const filtered = walletAddress
     ? tracked.filter((t) => t.wallet_address.toLowerCase() === walletAddress.toLowerCase())
@@ -146,7 +146,7 @@ export function getWalletStatus(userId: string, walletAddress?: string) {
 // ============================================================================
 
 export function getPortfolio(userId: string) {
-  const user = getOrCreateUserByMcpizeKey(userId);
+  const user = getOrCreateUser(userId);
   const tracked = getTrackedWallets(user.id);
   const stats = getUserStats(user.id);
 

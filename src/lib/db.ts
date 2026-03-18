@@ -89,12 +89,41 @@ export function getOrCreateUserByMcpizeKey(mcpizeKey: string): User {
   return db.prepare("SELECT * FROM users WHERE id = ?").get(result.lastInsertRowid) as User;
 }
 
+// Universal resolver — accepts telegram_id (prefixed "tg:") or mcpize_key
+export function getOrCreateUser(identifier: string): User {
+  if (identifier.startsWith("tg:")) {
+    return getOrCreateUserByTelegram(identifier);
+  }
+  return getOrCreateUserByMcpizeKey(identifier);
+}
+
 export function getUserById(userId: number): User | undefined {
   return db.prepare("SELECT * FROM users WHERE id = ?").get(userId) as User | undefined;
 }
 
 export function upgradeToPro(userId: number): void {
   db.prepare("UPDATE users SET tier = 'pro' WHERE id = ?").run(userId);
+}
+
+// Upgrade by string identifier (telegram_id or mcpize_key)
+export function upgradeUserToPro(identifier: string): void {
+  const user = identifier.startsWith("tg:")
+    ? db.prepare("SELECT * FROM users WHERE telegram_id = ?").get(identifier) as User | undefined
+    : db.prepare("SELECT * FROM users WHERE mcpize_key = ?").get(identifier) as User | undefined;
+  if (user) {
+    db.prepare("UPDATE users SET tier = 'pro' WHERE id = ?").run(user.id);
+  }
+}
+
+export function getUserByTelegramId(telegramId: string): User | undefined {
+  return db.prepare("SELECT * FROM users WHERE telegram_id = ?").get(telegramId) as User | undefined;
+}
+
+export function linkMcpizeKey(telegramIdentifier: string, mcpizeKey: string): void {
+  const user = db.prepare("SELECT * FROM users WHERE telegram_id = ?").get(telegramIdentifier) as User | undefined;
+  if (user) {
+    db.prepare("UPDATE users SET mcpize_key = ? WHERE id = ?").run(mcpizeKey, user.id);
+  }
 }
 
 // ============================================================================
