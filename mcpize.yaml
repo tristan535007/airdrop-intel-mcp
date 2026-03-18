@@ -1,0 +1,25 @@
+version: 1
+runtime: typescript
+entry: src/index.ts
+
+build:
+  install: npm ci
+  command: npm run build
+
+startCommand:
+  type: http
+  command: node dist/index.js
+
+secrets:
+  - name: ETHERSCAN_API_KEY
+    description: "Etherscan API key for on-chain activity checks (free at etherscan.io)"
+    required: true
+  - name: RAPIDAPI_KEY
+    description: "RapidAPI key for Crypto Events Calendar airdrop listings (free at rapidapi.com)"
+    required: false
+  - name: TELEGRAM_BOT_TOKEN
+    description: "Telegram bot token from @BotFather (required for Telegram notifications)"
+    required: false
+
+configSchema:
+  source: code
