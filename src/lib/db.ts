@@ -127,11 +127,11 @@ export async function getTrackedWallets(userId: number, projectSlug?: string) {
   return db.select().from(tracked_wallets).where(eq(tracked_wallets.user_id, userId)).all();
 }
 
-export async function addTrackedWallet(userId: number, walletAddress: string, projectSlug: string): Promise<{ success: boolean; message: string }> {
+export async function addTrackedWallet(userId: number, walletAddress: string, projectSlug: string, isPro = false): Promise<{ success: boolean; message: string }> {
   const user = await getUserById(userId);
   if (!user) return { success: false, message: "User not found" };
 
-  if (user.tier === "free") {
+  if (!isPro && user.tier === "free") {
     const [{ value: projectCount }] = await db.select({ value: countDistinct(tracked_wallets.project_slug) })
       .from(tracked_wallets).where(eq(tracked_wallets.user_id, userId));
     const existing = await db.select().from(tracked_wallets)

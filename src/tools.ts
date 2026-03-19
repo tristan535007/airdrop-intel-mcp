@@ -76,7 +76,7 @@ export function getAirdropDetails(projectId: string) {
 // Tool: track_wallet
 // ============================================================================
 
-export async function trackWallet(address: string, projectId: string, userId: string) {
+export async function trackWallet(address: string, projectId: string, userId: string, isPro = false) {
   if (!address.match(/^0x[a-fA-F0-9]{40}$/)) {
     return { success: false, message: "Invalid wallet address. Must be a 42-character hex string starting with 0x.", upgrade_required: false };
   }
@@ -87,7 +87,7 @@ export async function trackWallet(address: string, projectId: string, userId: st
   }
 
   const user = await getOrCreateUser(userId);
-  const result = await addTrackedWallet(user.id, address, projectId);
+  const result = await addTrackedWallet(user.id, address, projectId, isPro);
 
   return {
     success: result.success,

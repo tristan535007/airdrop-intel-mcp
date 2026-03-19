@@ -15,7 +15,7 @@ import {
 } from "./tools.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 import { initDb } from "./lib/db.js";
-import { requestContext, getCurrentUserId } from "./lib/context.js";
+import { requestContext, getCurrentUserId, getCurrentUserIsPro } from "./lib/context.js";
 
 // ============================================================================
 // Dev Logging Utilities
@@ -119,7 +119,7 @@ server.registerTool(
   },
   async ({ address, project_id }) => {
     const user_id = getCurrentUserId();
-    const result = await trackWallet(address, project_id, user_id);
+    const result = await trackWallet(address, project_id, user_id, getCurrentUserIsPro());
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
@@ -288,8 +288,12 @@ app.post("/mcp", async (req: Request, res: Response) => {
     process.env.DEV_USER_ID ||
     "local-dev-user";
 
+  // X-MCPize-Subscription-ID присутствует только у платных подписчиков
+  const subscriptionId = req.headers["x-mcpize-subscription-id"] as string | undefined;
+  const isPro = !!subscriptionId || process.env.DEV_IS_PRO === "true";
+
   res.on("close", () => transport.close());
-  await requestContext.run({ userId }, async () => {
+  await requestContext.run({ userId, isPro }, async () => {
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   });

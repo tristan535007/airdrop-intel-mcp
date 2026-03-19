@@ -121,6 +121,15 @@ describe("trackWallet", () => {
     expect(r2.upgrade_required).toBe(true);
     expect(r2.message).toContain("FREE_TIER_LIMIT");
   });
+
+  it("pro user can track multiple projects without limit", async () => {
+    const proUser = `test-user-pro-${Date.now()}`;
+    const r1 = await trackWallet(TEST_WALLET, "monad", proUser, true);
+    expect(r1.success).toBe(true);
+    const r2 = await trackWallet(TEST_WALLET, "megaeth", proUser, true);
+    expect(r2.success).toBe(true);
+    expect(r2.upgrade_required).toBe(false);
+  });
 });
 
 // ============================================================================
