@@ -232,7 +232,7 @@ app.post("/mcp", async (req: Request, res: Response) => {
 
   if (isDev && method === "initialize") {
     const relevantHeaders = Object.fromEntries(
-      Object.entries(req.headers).filter(([k]) => k.startsWith("x-") || k === "authorization")
+      Object.entries(req.headers).filter(([k]) => k.startsWith("x-mcpize") || k.startsWith("x-user") || k === "authorization")
     );
     if (Object.keys(relevantHeaders).length > 0) {
       console.log(chalk.gray(`[headers] ${JSON.stringify(relevantHeaders)}`));
@@ -282,7 +282,8 @@ app.post("/mcp", async (req: Request, res: Response) => {
   };
 
   const userId =
-    (req.headers["x-mcpize-user-key"] as string) ||
+    (req.headers["x-mcpize-user-id"] as string) ||      // MCPize: coming soon
+    (req.headers["x-mcpize-user-key"] as string) ||     // MCPize: legacy fallback
     (req.headers["x-user-key"] as string) ||
     process.env.DEV_USER_ID ||
     "local-dev-user";
