@@ -30,6 +30,7 @@ export interface AirdropProject {
   requiredProtocols: number;
   notes: string;
   officialUrl: string;
+  tags: string[]; // searchable keywords: "zk", "layer2", "evm", "defi", "gaming", etc.
 }
 
 export const CURATED_AIRDROPS: AirdropProject[] = [
@@ -49,6 +50,7 @@ export const CURATED_AIRDROPS: AirdropProject[] = [
     requiredProtocols: 3,
     officialUrl: "https://monad.xyz",
     notes: "Testnet is live. Focus on using multiple DeFi protocols — simple transfers don't count much.",
+    tags: ["evm", "l1", "layer1", "defi", "testnet", "top", "high-value", "parallel"],
     tasks: [
       {
         id: "monad-faucet",
@@ -102,6 +104,7 @@ export const CURATED_AIRDROPS: AirdropProject[] = [
     requiredProtocols: 2,
     officialUrl: "https://megaeth.systems",
     notes: "Early testnet. Less competition than Monad. Good risk/reward ratio.",
+    tags: ["evm", "l1", "layer1", "ethereum", "testnet", "high-tps", "defi"],
     tasks: [
       {
         id: "megaeth-faucet",
@@ -147,6 +150,7 @@ export const CURATED_AIRDROPS: AirdropProject[] = [
     requiredProtocols: 2,
     officialUrl: "https://aztec.network",
     notes: "Higher difficulty = less competition. ZK privacy focus makes it unique. High potential reward.",
+    tags: ["zk", "zk-proof", "privacy", "l2", "layer2", "ethereum", "high-value", "top"],
     tasks: [
       {
         id: "aztec-setup",
@@ -192,6 +196,7 @@ export const CURATED_AIRDROPS: AirdropProject[] = [
     requiredProtocols: 1,
     officialUrl: "https://somnia.network",
     notes: "Easy tasks, low competition so far. Good for beginners.",
+    tags: ["l1", "layer1", "gaming", "entertainment", "beginner", "testnet", "high-tps"],
     tasks: [
       {
         id: "somnia-faucet",
@@ -228,6 +233,7 @@ export const CURATED_AIRDROPS: AirdropProject[] = [
     requiredProtocols: 3,
     officialUrl: "https://starknet.io",
     notes: "Mainnet activity counts. Use AVNU for swaps, zkLend for lending. Snapshot rumored for Q3 2026.",
+    tags: ["zk", "zk-rollup", "l2", "layer2", "ethereum", "defi", "top", "high-value", "mainnet"],
     tasks: [
       {
         id: "starknet-wallet",
@@ -267,7 +273,13 @@ export function getProjectBySlug(slug: string): AirdropProject | undefined {
 export function searchProjects(query?: string, chains?: string[], difficulty?: string, minFunding?: number): AirdropProject[] {
   return CURATED_AIRDROPS.filter((p) => {
     if (p.status === "ended") return false;
-    if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.description.toLowerCase().includes(query.toLowerCase())) return false;
+    if (query) {
+      const q = query.toLowerCase();
+      const matchesName = p.name.toLowerCase().includes(q);
+      const matchesDesc = p.description.toLowerCase().includes(q);
+      const matchesTags = p.tags.some((t) => t.includes(q) || q.includes(t));
+      if (!matchesName && !matchesDesc && !matchesTags) return false;
+    }
     if (chains && chains.length > 0 && !chains.some((c) => p.chains.some((pc) => pc.includes(c.toLowerCase())))) return false;
     if (difficulty && p.difficulty !== difficulty) return false;
     if (minFunding && p.funding < minFunding) return false;

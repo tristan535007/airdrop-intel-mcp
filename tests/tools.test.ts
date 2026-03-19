@@ -37,6 +37,16 @@ describe("searchAirdrops", () => {
     expect(result.every((p) => p.funding_usd_millions >= 200)).toBe(true);
   });
 
+  it("finds by tag 'layer2'", () => {
+    const result = searchAirdrops({ query: "layer2" });
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("finds by tag 'zk'", () => {
+    const result = searchAirdrops({ query: "zk" });
+    expect(result.length).toBeGreaterThan(0);
+  });
+
   it("returns results sorted by funding descending", () => {
     const result = searchAirdrops({});
     for (let i = 1; i < result.length; i++) {

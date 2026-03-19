@@ -15,6 +15,7 @@ import {
 } from "./tools.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 import { initDb } from "./lib/db.js";
+import { requestContext, getCurrentUserId } from "./lib/context.js";
 
 // ============================================================================
 // Dev Logging Utilities
@@ -70,25 +71,12 @@ server.registerTool(
   "search_airdrops",
   {
     title: "Search Airdrops",
-    description: "Search for active crypto airdrops and testnets. Returns a list of projects with funding, deadlines, difficulty, and estimated rewards.",
+    description: "Search for active crypto airdrops and testnets. Returns a list of projects with funding, deadlines, difficulty, and estimated rewards. Use filters to narrow results — do NOT pass natural language sentences as query, use short English keywords only. The database is in English, always translate user intent to English keywords before calling this tool.",
     inputSchema: {
-      query: z.string().optional().describe("Search by project name or keyword (e.g. 'monad', 'zk', 'layer2')"),
+      query: z.string().optional().describe("Short keyword to match project name, description or tag. Use single words like 'monad', 'zk', 'layer2', 'defi', 'gaming'. Do NOT pass full sentences or phrases."),
       chains: z.array(z.string()).optional().describe("Filter by chain names (e.g. ['ethereum', 'base', 'arbitrum'])"),
       difficulty: z.enum(["easy", "medium", "hard"]).optional().describe("Filter by task difficulty"),
-      min_funding: z.number().optional().describe("Minimum project funding in USD millions (e.g. 50 for $50M+)"),
-    },
-    outputSchema: {
-      airdrops: z.array(z.object({
-        slug: z.string(),
-        name: z.string(),
-        description: z.string(),
-        funding_usd_millions: z.number(),
-        difficulty: z.string(),
-        estimated_reward_usd: z.string(),
-        deadline: z.string().nullable(),
-        task_count: z.number(),
-      })),
-      total: z.number(),
+      min_funding: z.number().optional().describe("Minimum project funding in USD millions (e.g. 50 for $50M+). For 'top funded' requests use this filter instead of query."),
     },
   },
   async (input) => {
@@ -96,7 +84,6 @@ server.registerTool(
     const output = { airdrops, total: airdrops.length };
     return {
       content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-      structuredContent: output,
     };
   }
 );
@@ -110,34 +97,11 @@ server.registerTool(
     inputSchema: {
       project_id: z.string().describe("Project slug (e.g. 'monad', 'megaeth', 'aztec'). Get slugs from search_airdrops."),
     },
-    outputSchema: {
-      project: z.object({
-        slug: z.string(),
-        name: z.string(),
-        description: z.string(),
-        notes: z.string(),
-        official_url: z.string(),
-        estimated_reward_usd: z.string(),
-        required_tx_per_week: z.number(),
-        required_protocols: z.number(),
-        total_estimated_minutes: z.number(),
-        tasks: z.array(z.object({
-          id: z.string(),
-          title: z.string(),
-          description: z.string(),
-          type: z.string(),
-          automated: z.boolean(),
-          estimated_minutes: z.number(),
-        })),
-      }).nullable(),
-    },
   },
   async ({ project_id }) => {
     const project = getAirdropDetails(project_id);
-    const output = { project };
     return {
-      content: [{ type: "text", text: project ? JSON.stringify(output, null, 2) : `Project "${project_id}" not found. Use search_airdrops to see available projects.` }],
-      structuredContent: output,
+      content: [{ type: "text", text: project ? JSON.stringify({ project }, null, 2) : `Project "${project_id}" not found. Use search_airdrops to see available projects.` }],
     };
   }
 );
@@ -151,19 +115,13 @@ server.registerTool(
     inputSchema: {
       address: z.string().describe("Ethereum wallet address (0x...)"),
       project_id: z.string().describe("Project slug to track (e.g. 'monad'). Get from search_airdrops."),
-      user_id: z.string().describe("Your MCPize API key or unique user identifier"),
-    },
-    outputSchema: {
-      success: z.boolean(),
-      message: z.string(),
-      upgrade_required: z.boolean(),
     },
   },
-  async ({ address, project_id, user_id }) => {
+  async ({ address, project_id }) => {
+    const user_id = getCurrentUserId();
     const result = await trackWallet(address, project_id, user_id);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      structuredContent: result,
     };
   }
 );
@@ -175,25 +133,14 @@ server.registerTool(
     title: "Get Wallet Status",
     description: "Check the status of all your tracked wallets and projects. Shows deadlines, urgency, and upcoming actions.",
     inputSchema: {
-      user_id: z.string().describe("Your MCPize API key or unique user identifier"),
       wallet_address: z.string().optional().describe("Filter to a specific wallet address (optional)"),
     },
-    outputSchema: {
-      tracked_count: z.number(),
-      statuses: z.array(z.object({
-        wallet: z.string(),
-        project_name: z.string(),
-        deadline: z.string().nullable(),
-        days_until_deadline: z.number().nullable(),
-        urgency: z.string(),
-      })),
-    },
   },
-  async ({ user_id, wallet_address }) => {
+  async ({ wallet_address }) => {
+    const user_id = getCurrentUserId();
     const result = await getWalletStatus(user_id, wallet_address);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      structuredContent: result,
     };
   }
 );
@@ -204,28 +151,13 @@ server.registerTool(
   {
     title: "Get Portfolio",
     description: "Get a full overview of all your tracked airdrops and wallets with estimated pending rewards.",
-    inputSchema: {
-      user_id: z.string().describe("Your MCPize API key or unique user identifier"),
-    },
-    outputSchema: {
-      tier: z.string(),
-      total_projects: z.number(),
-      total_wallets: z.number(),
-      estimated_pending_usd: z.string(),
-      projects: z.array(z.object({
-        slug: z.string(),
-        name: z.string(),
-        wallets: z.array(z.string()),
-        days_until_deadline: z.number().nullable(),
-        estimated_reward_usd: z.string(),
-      })),
-    },
+    inputSchema: {},
   },
-  async ({ user_id }) => {
+  async () => {
+    const user_id = getCurrentUserId();
     const result = await getPortfolio(user_id);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      structuredContent: result,
     };
   }
 );
@@ -240,21 +172,10 @@ server.registerTool(
       address: z.string().describe("Ethereum wallet address to analyze (0x...)"),
       chain: z.string().optional().describe("Chain to check (default: 'ethereum'). Supported: ethereum, base, arbitrum, optimism"),
     },
-    outputSchema: {
-      address: z.string(),
-      risk_score: z.number(),
-      risk_level: z.string(),
-      risks: z.array(z.object({ type: z.string(), severity: z.string(), description: z.string() })),
-      recommendations: z.array(z.string()),
-      tx_count: z.number(),
-      unique_protocols: z.number(),
-      wallet_age_days: z.number(),
-    },
   },
   async ({ address, chain }) => {
     if (!address.match(/^0x[a-fA-F0-9]{40}$/)) {
-      const error = { error: "Invalid wallet address", address };
-      return { content: [{ type: "text", text: JSON.stringify(error) }], structuredContent: error, isError: true };
+      return { content: [{ type: "text", text: JSON.stringify({ error: "Invalid wallet address", address }) }], isError: true };
     }
     const result = await checkSybilRisk(address, chain || "ethereum");
     const output = {
@@ -269,7 +190,6 @@ server.registerTool(
     };
     return {
       content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-      structuredContent: output,
     };
   }
 );
@@ -283,25 +203,12 @@ server.registerTool(
     inputSchema: {
       days: z.number().optional().describe("How many days ahead to look (default: 90)"),
     },
-    outputSchema: {
-      snapshots: z.array(z.object({
-        project_slug: z.string(),
-        project_name: z.string(),
-        date: z.string(),
-        type: z.string(),
-        days_remaining: z.number(),
-        urgency: z.string(),
-        estimated_reward_usd: z.string(),
-      })),
-      total: z.number(),
-    },
   },
   async ({ days }) => {
     const snapshots = getUpcomingSnapshotsList(days ?? 90);
     const output = { snapshots, total: snapshots.length };
     return {
       content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-      structuredContent: output,
     };
   }
 );
@@ -365,9 +272,17 @@ app.post("/mcp", async (req: Request, res: Response) => {
     return originalEnd(chunk as string, encodingOrCallback as BufferEncoding, callback);
   };
 
+  const userId =
+    (req.headers["x-mcpize-user-key"] as string) ||
+    (req.headers["x-user-key"] as string) ||
+    process.env.DEV_USER_ID ||
+    "local-dev-user";
+
   res.on("close", () => transport.close());
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
+  await requestContext.run({ userId }, async () => {
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  });
 });
 
 app.use((_err: unknown, _req: Request, res: Response, _next: Function) => {
