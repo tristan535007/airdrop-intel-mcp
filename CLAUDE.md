@@ -119,6 +119,49 @@ Deploy using MCPize CLI:
 mcpize deploy
 ```
 
+## TDD Rules — MANDATORY
+
+This project follows strict Test-Driven Development. These rules apply to every change.
+
+### Order of work — never deviate
+
+1. **Write the test first** — in `tests/tools.test.ts`, failing
+2. **Run `npm test`** — confirm it fails (red)
+3. **Write the implementation** — minimal code to make it pass
+4. **Run `npm test`** — confirm it passes (green)
+5. **Refactor if needed** — tests must stay green
+
+### When changing existing code
+
+- If you change a function signature → update the test first
+- If you change return shape → update the test first
+- If you add a parameter → add a test case for it first
+- Never leave a test commented out or skipped (`it.skip`)
+
+### What must be tested
+
+| What | Where | Required |
+|------|-------|----------|
+| Every tool function | `tests/tools.test.ts` | Yes |
+| Happy path | at least 1 test per tool | Yes |
+| Error/edge cases | invalid input, not found, tier limits | Yes |
+| Async functions | must use `async/await` in tests | Yes |
+
+### What NOT to test
+
+- `index.ts` MCP registration (integration, not unit)
+- `bot.ts` Telegram handlers (too coupled to grammy)
+- `db.ts` internal queries directly (tested via tools)
+
+### Running tests
+
+```bash
+npm test              # Run all tests (uses local SQLite, no network)
+npm run build         # Must pass before deploy
+```
+
+Tests use `file:./data/test.db` (local SQLite) — no Turso connection needed.
+
 ## Best Practices
 
 1. **Tools vs Resources**: Use tools for actions, resources for data
