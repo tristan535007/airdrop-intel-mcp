@@ -14,6 +14,7 @@ import {
   getOrCreateUserByMcpizeKey,
 } from "./tools.js";
 import { checkSybilRisk } from "./lib/sybil.js";
+import { initDb } from "./lib/db.js";
 
 // ============================================================================
 // Dev Logging Utilities
@@ -159,7 +160,7 @@ server.registerTool(
     },
   },
   async ({ address, project_id, user_id }) => {
-    const result = trackWallet(address, project_id, user_id);
+    const result = await trackWallet(address, project_id, user_id);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       structuredContent: result,
@@ -189,7 +190,7 @@ server.registerTool(
     },
   },
   async ({ user_id, wallet_address }) => {
-    const result = getWalletStatus(user_id, wallet_address);
+    const result = await getWalletStatus(user_id, wallet_address);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       structuredContent: result,
@@ -221,7 +222,7 @@ server.registerTool(
     },
   },
   async ({ user_id }) => {
-    const result = getPortfolio(user_id);
+    const result = await getPortfolio(user_id);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       structuredContent: result,
@@ -378,6 +379,9 @@ app.use((_err: unknown, _req: Request, res: Response, _next: Function) => {
 // ============================================================================
 
 const port = parseInt(process.env.PORT || "8080");
+
+await initDb();
+
 const httpServer = app.listen(port, () => {
   console.log();
   console.log(chalk.bold("🚀 Airdrop Intel MCP"), chalk.cyan(`http://localhost:${port}`));

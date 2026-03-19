@@ -63,14 +63,12 @@ mcpize dev --playground  # Interactive testing in browser
 |----------|----------|-------------|
 | `ETHERSCAN_API_KEY` | Yes | Free at [etherscan.io/myapikey](https://etherscan.io/myapikey) |
 | `RAPIDAPI_KEY` | No | Free at [rapidapi.com](https://rapidapi.com/emir12/api/crypto-events-calendar) — for live airdrop listings |
-| `TELEGRAM_BOT_TOKEN` | No | From [@BotFather](https://t.me/BotFather) — for Telegram notifications |
-
 ## Monetization
 
-| Channel | Free | Pro |
-|---------|------|-----|
-| Claude (MCPize) | 1 project | $15/mo |
-| Telegram Bot | 1 project | 700 Stars/mo |
+| Plan | Projects | Price |
+|------|----------|-------|
+| Free | 1 | Free |
+| Pro | Unlimited | $15/mo |
 
 ## Development
 

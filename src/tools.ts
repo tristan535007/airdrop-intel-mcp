@@ -76,7 +76,7 @@ export function getAirdropDetails(projectId: string) {
 // Tool: track_wallet
 // ============================================================================
 
-export function trackWallet(address: string, projectId: string, userId: string) {
+export async function trackWallet(address: string, projectId: string, userId: string) {
   if (!address.match(/^0x[a-fA-F0-9]{40}$/)) {
     return { success: false, message: "Invalid wallet address. Must be a 42-character hex string starting with 0x.", upgrade_required: false };
   }
@@ -86,8 +86,8 @@ export function trackWallet(address: string, projectId: string, userId: string) 
     return { success: false, message: `Project "${projectId}" not found. Use search_airdrops to find valid project IDs.`, upgrade_required: false };
   }
 
-  const user = getOrCreateUser(userId);
-  const result = addTrackedWallet(user.id, address, projectId);
+  const user = await getOrCreateUser(userId);
+  const result = await addTrackedWallet(user.id, address, projectId);
 
   return {
     success: result.success,
@@ -103,9 +103,9 @@ export function trackWallet(address: string, projectId: string, userId: string) 
 // Tool: get_wallet_status
 // ============================================================================
 
-export function getWalletStatus(userId: string, walletAddress?: string) {
-  const user = getOrCreateUser(userId);
-  const tracked = getTrackedWallets(user.id);
+export async function getWalletStatus(userId: string, walletAddress?: string) {
+  const user = await getOrCreateUser(userId);
+  const tracked = await getTrackedWallets(user.id);
   const filtered = walletAddress
     ? tracked.filter((t) => t.wallet_address.toLowerCase() === walletAddress.toLowerCase())
     : tracked;
@@ -145,10 +145,10 @@ export function getWalletStatus(userId: string, walletAddress?: string) {
 // Tool: get_portfolio
 // ============================================================================
 
-export function getPortfolio(userId: string) {
-  const user = getOrCreateUser(userId);
-  const tracked = getTrackedWallets(user.id);
-  const stats = getUserStats(user.id);
+export async function getPortfolio(userId: string) {
+  const user = await getOrCreateUser(userId);
+  const tracked = await getTrackedWallets(user.id);
+  const stats = await getUserStats(user.id);
 
   const byProject = tracked.reduce<Record<string, string[]>>((acc, t) => {
     if (!acc[t.project_slug]) acc[t.project_slug] = [];
@@ -196,7 +196,7 @@ export function getPortfolio(userId: string) {
 // Tool: get_upcoming_snapshots
 // ============================================================================
 
-export function getUpcomingSnapshotsList(days: number = 30) {
+export function getUpcomingSnapshotsList(days: number = 90) {
   const projects = getUpcomingSnapshots(days);
   return projects.map((p) => {
     const dateStr = p.snapshotDate || p.deadline || "";

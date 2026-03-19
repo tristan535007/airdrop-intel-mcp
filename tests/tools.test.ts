@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+import { initDb } from "../src/lib/db.js";
 import { searchAirdrops, getAirdropDetails, trackWallet, getWalletStatus, getPortfolio, getUpcomingSnapshotsList } from "../src/tools.js";
+
+beforeAll(async () => {
+  await initDb();
+});
 
 // ============================================================================
 // search_airdrops
@@ -78,35 +83,52 @@ const TEST_USER = `test-user-vitest-${Date.now()}`;
 const TEST_WALLET = "0x742d35Cc6634C0532925a3b8D4C9B1DAB8Adf35b";
 
 describe("trackWallet", () => {
-  it("adds a valid wallet successfully", () => {
-    const result = trackWallet(TEST_WALLET, "monad", TEST_USER);
+  it("adds a valid wallet successfully", async () => {
+    const result = await trackWallet(TEST_WALLET, "monad", TEST_USER);
     expect(result.success).toBe(true);
     expect(result.upgrade_required).toBe(false);
     expect(result.project_name).toBe("Monad");
   });
 
-  it("rejects invalid wallet address", () => {
-    const result = trackWallet("not-a-wallet", "monad", TEST_USER);
+  it("rejects invalid wallet address", async () => {
+    const result = await trackWallet("not-a-wallet", "monad", TEST_USER);
     expect(result.success).toBe(false);
     expect(result.message).toContain("Invalid wallet");
   });
 
-  it("rejects unknown project", () => {
-    const result = trackWallet(TEST_WALLET, "unknown-project-xyz", TEST_USER);
+  it("rejects unknown project", async () => {
+    const result = await trackWallet(TEST_WALLET, "unknown-project-xyz", TEST_USER);
     expect(result.success).toBe(false);
     expect(result.message).toContain("not found");
   });
 
-  it("enforces free tier limit on second project", () => {
+  it("enforces free tier limit on second project", async () => {
     const user2 = `test-user-tier-${Date.now()}`;
-    // First project — should succeed
-    const r1 = trackWallet(TEST_WALLET, "monad", user2);
+    const r1 = await trackWallet(TEST_WALLET, "monad", user2);
     expect(r1.success).toBe(true);
-    // Second project — should fail
-    const r2 = trackWallet(TEST_WALLET, "megaeth", user2);
+    const r2 = await trackWallet(TEST_WALLET, "megaeth", user2);
     expect(r2.success).toBe(false);
     expect(r2.upgrade_required).toBe(true);
     expect(r2.message).toContain("FREE_TIER_LIMIT");
+  });
+});
+
+// ============================================================================
+// get_wallet_status
+// ============================================================================
+
+describe("getWalletStatus", () => {
+  it("returns tracked wallets for existing user", async () => {
+    const result = await getWalletStatus(TEST_USER);
+    expect(result).toHaveProperty("tracked_count");
+    expect(result).toHaveProperty("statuses");
+    expect(result.tracked_count).toBeGreaterThan(0);
+  });
+
+  it("returns empty for new user", async () => {
+    const result = await getWalletStatus(`brand-new-user-${Date.now()}`);
+    expect(result.tracked_count).toBe(0);
+    expect(result.statuses).toHaveLength(0);
   });
 });
 
@@ -115,8 +137,8 @@ describe("trackWallet", () => {
 // ============================================================================
 
 describe("getPortfolio", () => {
-  it("returns portfolio for a user with tracked wallets", () => {
-    const result = getPortfolio(TEST_USER);
+  it("returns portfolio for a user with tracked wallets", async () => {
+    const result = await getPortfolio(TEST_USER);
     expect(result).toHaveProperty("tier");
     expect(result).toHaveProperty("total_projects");
     expect(result).toHaveProperty("projects");
@@ -124,8 +146,8 @@ describe("getPortfolio", () => {
     expect(result.projects[0].wallets.length).toBeGreaterThan(0);
   });
 
-  it("returns empty portfolio for new user", () => {
-    const result = getPortfolio(`brand-new-user-${Date.now()}`);
+  it("returns empty portfolio for new user", async () => {
+    const result = await getPortfolio(`brand-new-user-${Date.now()}`);
     expect(result.total_projects).toBe(0);
     expect(result.projects.length).toBe(0);
   });
@@ -137,7 +159,7 @@ describe("getPortfolio", () => {
 
 describe("getUpcomingSnapshotsList", () => {
   it("returns snapshots within the specified window", () => {
-    const result = getUpcomingSnapshotsList(365); // 1 year — should catch all test data
+    const result = getUpcomingSnapshotsList(365);
     expect(Array.isArray(result)).toBe(true);
     result.forEach((s) => {
       expect(s).toHaveProperty("project_slug");
@@ -147,7 +169,7 @@ describe("getUpcomingSnapshotsList", () => {
     });
   });
 
-  it("urgency is 'urgent' for <3 days and 'soon' for <14 days", () => {
+  it("urgency is correct based on days_remaining", () => {
     const all = getUpcomingSnapshotsList(365);
     all.forEach((s) => {
       if (s.days_remaining < 3) expect(s.urgency).toBe("urgent");

@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard, Keyboard } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import {
   searchAirdrops,
   getAirdropDetails,
@@ -32,13 +32,11 @@ function tierBadge(tier: string) {
   return tier === "pro" ? "⭐ Pro" : "🆓 Free";
 }
 
-const mainKeyboard = new Keyboard()
-  .text("🔍 Search Airdrops").text("📅 Snapshots").row()
-  .text("👛 Track Wallet").text("📊 Status").row()
-  .text("💼 Portfolio").text("⚠️ Sybil Risk").row()
-  .text("⭐ Upgrade to Pro").text("🔗 Link MCPize").row()
-  .resized()
-  .persistent();
+const mainKeyboard = new InlineKeyboard()
+  .text("🔍 Search", "menu_search").text("📅 Snapshots", "menu_snapshots").row()
+  .text("👛 Track Wallet", "menu_track").text("📊 Status", "menu_status").row()
+  .text("💼 Portfolio", "menu_portfolio").text("⚠️ Sybil Risk", "menu_risk").row()
+  .text("⭐ Upgrade to Pro", "upgrade_pro").text("🔗 Link MCPize", "menu_link");
 
 // ============================================================================
 // /start
@@ -48,29 +46,33 @@ bot.command("start", async (ctx) => {
   const tgId = ctx.from?.id;
   if (!tgId) return;
 
-  const user = getOrCreateUser(userId(tgId));
+  const user = await getOrCreateUser(userId(tgId));
 
   await ctx.reply(
     `👋 *Airdrop Intel*\n\n` +
     `Track crypto airdrops, monitor wallets, and check Sybil risk.\n\n` +
     `*Plan:* ${tierBadge(user.tier)}  |  Free: 1 project · Pro: unlimited\n\n` +
     `Use the buttons below to get started 👇`,
-    { parse_mode: "Markdown", reply_markup: mainKeyboard }
+    { parse_mode: "Markdown", reply_markup: { remove_keyboard: true } }
   );
+
+  await ctx.reply("Choose an action:", { reply_markup: mainKeyboard });
 });
 
 // ============================================================================
-// Keyboard button handlers
+// Inline keyboard button handlers
 // ============================================================================
 
-bot.hears("🔍 Search Airdrops", async (ctx) => {
+bot.callbackQuery("menu_search", async (ctx) => {
+  await ctx.answerCallbackQuery();
   await ctx.reply(
     "Send me a keyword to search:\n\n`/search monad` — search by name\n`/search zk` — search by keyword\n`/search` — show all airdrops",
     { parse_mode: "Markdown" }
   );
 });
 
-bot.hears("📅 Snapshots", async (ctx) => {
+bot.callbackQuery("menu_snapshots", async (ctx) => {
+  await ctx.answerCallbackQuery();
   const snapshots = getUpcomingSnapshotsList(90);
   if (snapshots.length === 0) return ctx.reply("No upcoming snapshots in the next 90 days.");
   const lines = snapshots.map((s) => {
@@ -80,15 +82,17 @@ bot.hears("📅 Snapshots", async (ctx) => {
   await ctx.reply(`*Upcoming Snapshots & Deadlines:*\n\n` + lines.join("\n\n"), { parse_mode: "Markdown" });
 });
 
-bot.hears("👛 Track Wallet", async (ctx) => {
+bot.callbackQuery("menu_track", async (ctx) => {
+  await ctx.answerCallbackQuery();
   await ctx.reply(
     "Send wallet address and project:\n\n`/track 0xABC...123 monad`\n\nAvailable projects: `monad`, `megaeth`, `aztec`, `somnia`, `starknet`",
     { parse_mode: "Markdown" }
   );
 });
 
-bot.hears("📊 Status", async (ctx) => {
-  const uid = userId(ctx.from!.id);
+bot.callbackQuery("menu_status", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const uid = userId(ctx.from.id);
   const result = await getWalletStatus(uid);
   if (result.tracked_count === 0) {
     return ctx.reply("No wallets tracked yet.\n\nUse 👛 *Track Wallet* to add one.", { parse_mode: "Markdown" });
@@ -100,8 +104,9 @@ bot.hears("📊 Status", async (ctx) => {
   await ctx.reply(`*Your Wallets (${result.tracked_count}):*\n\n` + lines.join("\n\n"), { parse_mode: "Markdown" });
 });
 
-bot.hears("💼 Portfolio", async (ctx) => {
-  const uid = userId(ctx.from!.id);
+bot.callbackQuery("menu_portfolio", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const uid = userId(ctx.from.id);
   const result = await getPortfolio(uid);
   if (result.total_projects === 0) {
     return ctx.reply("No projects tracked yet.\n\nUse 👛 *Track Wallet* to start.", { parse_mode: "Markdown" });
@@ -117,31 +122,16 @@ bot.hears("💼 Portfolio", async (ctx) => {
   );
 });
 
-bot.hears("⚠️ Sybil Risk", async (ctx) => {
+bot.callbackQuery("menu_risk", async (ctx) => {
+  await ctx.answerCallbackQuery();
   await ctx.reply(
     "Send wallet address to analyze:\n\n`/risk 0xABC...123`\n`/risk 0xABC...123 base` — on specific chain",
     { parse_mode: "Markdown" }
   );
 });
 
-bot.hears("⭐ Upgrade to Pro", async (ctx) => {
-  const uid = userId(ctx.from!.id);
-  const user = getOrCreateUser(uid);
-  if (user.tier === "pro") {
-    return ctx.reply("✅ You already have *Pro* plan! Unlimited projects enabled.", { parse_mode: "Markdown" });
-  }
-  const keyboard = new InlineKeyboard().text(`⭐ Pay ${PRO_PRICE_STARS} Stars (~$15/mo)`, "upgrade_pro");
-  await ctx.reply(
-    `⭐ *Upgrade to Pro*\n\n` +
-    `🆓 *Free:* 1 tracked project\n` +
-    `⭐ *Pro:* Unlimited projects + priority support\n\n` +
-    `Price: *${PRO_PRICE_STARS} Telegram Stars* (~$15/mo)\n\n` +
-    `Already paid on MCPize? Use 🔗 *Link MCPize* to get Pro here too.`,
-    { parse_mode: "Markdown", reply_markup: keyboard }
-  );
-});
-
-bot.hears("🔗 Link MCPize", async (ctx) => {
+bot.callbackQuery("menu_link", async (ctx) => {
+  await ctx.answerCallbackQuery();
   await ctx.reply(
     "Send your MCPize API key to link accounts:\n\n`/link YOUR_MCPIZE_API_KEY`\n\nFind your key: MCPize Dashboard → Account → API Keys\n\nIf you have Pro on MCPize, it will unlock here automatically.",
     { parse_mode: "Markdown" }
@@ -352,7 +342,7 @@ bot.command("snapshots", async (ctx) => {
 
 bot.command("upgrade", async (ctx) => {
   const uid = userId(ctx.from!.id);
-  const user = getOrCreateUser(uid);
+  const user = await getOrCreateUser(uid);
 
   if (user.tier === "pro") {
     return ctx.reply("✅ You already have *Pro* plan! Unlimited projects enabled.", { parse_mode: "Markdown" });
@@ -376,6 +366,10 @@ bot.command("upgrade", async (ctx) => {
 
 bot.callbackQuery("upgrade_pro", async (ctx) => {
   await ctx.answerCallbackQuery();
+  const user = await getOrCreateUser(userId(ctx.from.id));
+  if (user.tier === "pro") {
+    return ctx.reply("✅ You already have *Pro* plan! Unlimited projects enabled.", { parse_mode: "Markdown" });
+  }
   await ctx.api.sendInvoice(
     ctx.chat!.id,
     "Airdrop Intel Pro",
@@ -402,7 +396,7 @@ bot.on("message:successful_payment", async (ctx) => {
   const tgId = ctx.from!.id;
   const uid = userId(tgId);
 
-  upgradeUserToPro(uid);
+  await upgradeUserToPro(uid);
 
   await ctx.reply(
     `🎉 *Payment successful!*\n\n` +
@@ -433,11 +427,11 @@ bot.command("link", async (ctx) => {
   const uid = userId(tgId);
 
   // Check if the MCPize key belongs to a pro user
-  const mcpizeUser = getOrCreateUserByMcpizeKey(mcpizeKey);
-  linkMcpizeKey(uid, mcpizeKey);
+  const mcpizeUser = await getOrCreateUserByMcpizeKey(mcpizeKey);
+  await linkMcpizeKey(uid, mcpizeKey);
 
   if (mcpizeUser.tier === "pro") {
-    upgradeUserToPro(uid);
+    await upgradeUserToPro(uid);
     await ctx.reply(
       `✅ *MCPize account linked!*\n\n` +
       `Pro plan detected — you now have unlimited projects here too.`,
