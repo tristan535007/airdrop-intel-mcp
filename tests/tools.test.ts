@@ -152,6 +152,16 @@ describe("untrackProject", () => {
     expect(portfolio.projects.find((p) => p.slug === "monad")).toBeUndefined();
   });
 
+  it("cleans up task completions on untrack", async () => {
+    const user = `test-untrack-cleanup-${Date.now()}`;
+    await logTaskCompletion("monad", "faucet-claim", user);
+    await logTaskCompletion("monad", "ambient-swap", user);
+    await untrackProject("monad", user);
+    await subscribeToAirdrop("monad", "Monad", user);
+    const progress = await getTaskProgress("monad", user);
+    expect(progress.completed_count).toBe(0);
+  });
+
   it("after untrack, free tier slot is freed", async () => {
     const user = `test-untrack-free-${Date.now()}`;
     await subscribeToAirdrop("monad", "Monad", user);
@@ -222,6 +232,26 @@ describe("logTaskCompletion", () => {
     await logTaskCompletion("monad", "faucet-claim", user);
     const portfolio = await getPortfolio(user);
     expect(portfolio.projects.find((p) => p.slug === "monad")).toBeDefined();
+  });
+
+  it("does not auto-subscribe on free tier second project", async () => {
+    const user = `test-task-tier-${Date.now()}`;
+    await subscribeToAirdrop("monad", "Monad", user);
+    const result = await logTaskCompletion("megaeth", "task-1", user, false);
+    expect(result.success).toBe(true);
+    expect(result.upgrade_required).toBe(true);
+    const portfolio = await getPortfolio(user);
+    expect(portfolio.projects.find((p) => p.slug === "megaeth")).toBeUndefined();
+  });
+
+  it("pro user can auto-subscribe via task log", async () => {
+    const user = `test-task-pro-autosub-${Date.now()}`;
+    await subscribeToAirdrop("monad", "Monad", user, true);
+    const result = await logTaskCompletion("megaeth", "task-1", user, true);
+    expect(result.success).toBe(true);
+    expect(result.upgrade_required).toBe(false);
+    const portfolio = await getPortfolio(user);
+    expect(portfolio.projects.find((p) => p.slug === "megaeth")).toBeDefined();
   });
 });
 

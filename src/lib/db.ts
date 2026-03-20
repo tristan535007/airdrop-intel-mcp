@@ -171,16 +171,12 @@ export async function removeAllWalletsForProject(userId: string, projectSlug: st
 // ============================================================================
 
 export interface UserStats {
-  totalProjects: number;
-  activeProjects: number;
   claimedAirdrops: number;
   totalUsdValue: number;
   totalWallets: number;
 }
 
 export async function getUserStats(userId: string): Promise<UserStats> {
-  const [{ projects }] = await db.select({ projects: countDistinct(tracked_wallets.project_slug) })
-    .from(tracked_wallets).where(eq(tracked_wallets.user_id, userId));
   const [{ wallets }] = await db.select({ wallets: countDistinct(tracked_wallets.wallet_address) })
     .from(tracked_wallets).where(eq(tracked_wallets.user_id, userId));
   const [{ claimedCount, totalUsd }] = await db.select({
@@ -189,8 +185,6 @@ export async function getUserStats(userId: string): Promise<UserStats> {
   }).from(claimed_airdrops).where(eq(claimed_airdrops.user_id, userId));
 
   return {
-    totalProjects: projects,
-    activeProjects: projects,
     claimedAirdrops: claimedCount,
     totalUsdValue: Number(totalUsd ?? 0),
     totalWallets: wallets,
@@ -212,6 +206,13 @@ export async function addClaimedAirdrop(userId: string, projectSlug: string, tok
 export async function markTaskComplete(userId: string, projectSlug: string, taskId: string, notes?: string) {
   await db.insert(task_completions).values({ user_id: userId, project_slug: projectSlug, task_id: taskId, notes: notes ?? null })
     .onConflictDoNothing();
+}
+
+export async function removeTaskCompletionsForProject(userId: string, projectSlug: string): Promise<number> {
+  const result = await db.delete(task_completions).where(
+    and(eq(task_completions.user_id, userId), eq(task_completions.project_slug, projectSlug))
+  );
+  return result.rowsAffected ?? 0;
 }
 
 export async function getCompletedTasks(userId: string, projectSlug: string): Promise<string[]> {

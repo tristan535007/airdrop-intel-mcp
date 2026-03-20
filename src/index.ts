@@ -158,10 +158,11 @@ server.registerTool(
     },
   },
   async ({ address, chain }) => {
-    if (!address.match(/^0x[a-fA-F0-9]{40}$/)) {
+    const normalizedAddress = address.toLowerCase();
+    if (!normalizedAddress.match(/^0x[a-fA-F0-9]{40}$/)) {
       return { content: [{ type: "text", text: JSON.stringify({ error: "Invalid wallet address", address }) }], isError: true };
     }
-    const result = await checkSybilRisk(address, chain || "ethereum");
+    const result = await checkSybilRisk(normalizedAddress, chain || "ethereum");
     const output = {
       address: result.address,
       risk_score: result.riskScore,
@@ -192,7 +193,7 @@ server.registerTool(
   },
   async ({ project_slug, task_id, notes }) => {
     const user_id = getCurrentUserId();
-    const result = await logTaskCompletion(project_slug, task_id, user_id, notes);
+    const result = await logTaskCompletion(project_slug, task_id, user_id, getCurrentUserIsPro(), notes);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };

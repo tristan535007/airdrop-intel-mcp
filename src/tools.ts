@@ -13,6 +13,7 @@ import {
   getCompletedTasks,
   addClaimedAirdrop,
   removeAllWalletsForProject,
+  removeTaskCompletionsForProject,
   subscribeToProject,
   unsubscribeFromProject,
   getSubscribedProjects,
@@ -24,6 +25,7 @@ import { checkSybilRisk } from "./lib/sybil.js";
 // ============================================================================
 
 export async function subscribeToAirdrop(projectSlug: string, projectName: string, userId: string, isPro = false, deadline?: string) {
+  projectSlug = projectSlug.toLowerCase();
   const user = await getOrCreateUser(userId);
 
   if (!isPro && user.tier === "free") {
@@ -53,6 +55,7 @@ export async function subscribeToAirdrop(projectSlug: string, projectName: strin
 // ============================================================================
 
 export async function trackWallet(address: string, projectSlug: string, projectName: string, userId: string, isPro = false) {
+  projectSlug = projectSlug.toLowerCase();
   if (!address.match(/^0x[a-fA-F0-9]{40}$/)) {
     return { success: false, message: "Invalid wallet address. Must be a 42-character hex string starting with 0x.", upgrade_required: false };
   }
@@ -162,12 +165,30 @@ export async function getPortfolio(userId: string) {
 // Tool: log_task_completion
 // ============================================================================
 
-export async function logTaskCompletion(projectSlug: string, taskId: string, userId: string, notes?: string) {
+export async function logTaskCompletion(projectSlug: string, taskId: string, userId: string, isPro = false, notes?: string) {
+  projectSlug = projectSlug.toLowerCase();
   const user = await getOrCreateUser(userId);
   await markTaskComplete(user.id, projectSlug, taskId, notes);
-  await subscribeToProject(user.id, projectSlug);
+
+  const subscribed = await getSubscribedProjects(user.id);
+  const alreadyIn = subscribed.some((s) => s.project_slug === projectSlug);
+
+  if (!alreadyIn) {
+    if (!isPro && user.tier === "free" && subscribed.length >= 1) {
+      return {
+        success: true,
+        upgrade_required: true,
+        project_slug: projectSlug,
+        task_id: taskId,
+        message: `Task "${taskId}" logged. FREE_TIER_LIMIT: upgrade to Pro to add ${projectSlug} to your portfolio.`,
+      };
+    }
+    await subscribeToProject(user.id, projectSlug);
+  }
+
   return {
     success: true,
+    upgrade_required: false,
     project_slug: projectSlug,
     task_id: taskId,
     message: `Task "${taskId}" marked as completed for ${projectSlug}.`,
@@ -179,6 +200,7 @@ export async function logTaskCompletion(projectSlug: string, taskId: string, use
 // ============================================================================
 
 export async function getTaskProgress(projectSlug: string, userId: string) {
+  projectSlug = projectSlug.toLowerCase();
   const user = await getOrCreateUser(userId);
   const completed = await getCompletedTasks(user.id, projectSlug);
   const sub = (await getSubscribedProjects(user.id)).find((s) => s.project_slug === projectSlug);
@@ -196,8 +218,10 @@ export async function getTaskProgress(projectSlug: string, userId: string) {
 // ============================================================================
 
 export async function untrackProject(projectSlug: string, userId: string) {
+  projectSlug = projectSlug.toLowerCase();
   const user = await getOrCreateUser(userId);
   const removed = await removeAllWalletsForProject(user.id, projectSlug);
+  await removeTaskCompletionsForProject(user.id, projectSlug);
   await unsubscribeFromProject(user.id, projectSlug);
   return {
     success: true,
@@ -212,6 +236,7 @@ export async function untrackProject(projectSlug: string, userId: string) {
 // ============================================================================
 
 export async function logClaimedAirdrop(projectSlug: string, userId: string, tokensReceived: string, usdValue = 0) {
+  projectSlug = projectSlug.toLowerCase();
   const user = await getOrCreateUser(userId);
   await addClaimedAirdrop(user.id, projectSlug, tokensReceived, usdValue);
   const completed = await getCompletedTasks(user.id, projectSlug);
