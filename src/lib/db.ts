@@ -1,5 +1,6 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
+import { migrate } from "drizzle-orm/libsql/migrator";
 import { eq, and, count, countDistinct, sum, sql } from "drizzle-orm";
 import { users, tracked_wallets, claimed_airdrops, tool_calls, task_completions } from "./schema.js";
 
@@ -21,52 +22,7 @@ export const db = drizzle(client);
 // ============================================================================
 
 export async function initDb() {
-  await client.executeMultiple(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      telegram_id TEXT UNIQUE,
-      mcpize_key TEXT UNIQUE,
-      tier TEXT NOT NULL DEFAULT 'free',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      last_active_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS tracked_wallets (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      wallet_address TEXT NOT NULL,
-      project_slug TEXT NOT NULL,
-      added_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(user_id, wallet_address, project_slug)
-    );
-
-    CREATE TABLE IF NOT EXISTS claimed_airdrops (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      project_slug TEXT NOT NULL,
-      tokens_received TEXT,
-      usd_value REAL DEFAULT 0,
-      claimed_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS tool_calls (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER REFERENCES users(id),
-      channel TEXT NOT NULL DEFAULT 'mcp',
-      tool_name TEXT NOT NULL,
-      called_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS task_completions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      project_slug TEXT NOT NULL,
-      task_id TEXT NOT NULL,
-      completed_at TEXT NOT NULL DEFAULT (datetime('now')),
-      notes TEXT,
-      UNIQUE(user_id, project_slug, task_id)
-    );
-  `);
+  await migrate(db, { migrationsFolder: "./drizzle" });
 }
 
 // ============================================================================
