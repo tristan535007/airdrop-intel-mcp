@@ -4,12 +4,10 @@ import express, { Request, Response } from "express";
 import { z } from "zod";
 import chalk from "chalk";
 import {
-  searchAirdrops,
-  getAirdropDetails,
+  subscribeToAirdrop,
   trackWallet,
   getWalletStatus,
   getPortfolio,
-  getUpcomingSnapshotsList,
   getUserStats,
   getOrCreateUserByMcpizeKey,
   logTaskCompletion,
@@ -70,42 +68,23 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-// ---- search_airdrops ----
+// ---- subscribe_to_project ----
 server.registerTool(
-  "search_airdrops",
+  "subscribe_to_project",
   {
-    title: "Search Airdrops",
-    description: "Search for active crypto airdrops and testnets. Returns a list of projects with funding, deadlines, difficulty, and estimated rewards. Use filters to narrow results — do NOT pass natural language sentences as query, use short English keywords only. The database is in English, always translate user intent to English keywords before calling this tool.",
+    title: "Subscribe to Project",
+    description: "Subscribe the user to an airdrop project to start tracking their participation. Call this when the user agrees to participate in an airdrop you found via web search. This creates their personal tracker for the project. For mainnet projects also use track_wallet to register their wallet address.",
     inputSchema: {
-      query: z.string().optional().describe("Short keyword to match project name, description or tag. Use single words like 'monad', 'zk', 'layer2', 'defi', 'gaming'. Do NOT pass full sentences or phrases."),
-      chains: z.array(z.string()).optional().describe("Filter by chain names (e.g. ['ethereum', 'base', 'arbitrum'])"),
-      difficulty: z.enum(["easy", "medium", "hard"]).optional().describe("Filter by task difficulty"),
-      min_funding: z.number().optional().describe("Minimum project funding in USD millions (e.g. 50 for $50M+). For 'top funded' requests use this filter instead of query."),
+      project_slug: z.string().describe("Short unique identifier for the project (e.g. 'monad', 'megaeth', 'starknet'). Use lowercase with hyphens."),
+      project_name: z.string().describe("Human-readable project name (e.g. 'Monad', 'MegaETH', 'StarkNet')."),
+      deadline: z.string().optional().describe("Snapshot or deadline date in ISO format (e.g. '2026-06-01'). Provide if known from your research."),
     },
   },
-  async (input) => {
-    const airdrops = searchAirdrops(input);
-    const output = { airdrops, total: airdrops.length };
+  async ({ project_slug, project_name, deadline }) => {
+    const user_id = getCurrentUserId();
+    const result = await subscribeToAirdrop(project_slug, project_name, user_id, getCurrentUserIsPro(), deadline);
     return {
-      content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-    };
-  }
-);
-
-// ---- get_airdrop_details ----
-server.registerTool(
-  "get_airdrop_details",
-  {
-    title: "Get Airdrop Details",
-    description: "Get full details for a specific airdrop project including all tasks, requirements, and step-by-step guide. Use this to answer 'what do I need to do this week?' or 'how do I participate?' — it shows concrete weekly tasks for testnet projects and mainnet actions for snapshot-based projects.",
-    inputSchema: {
-      project_id: z.string().describe("Project slug (e.g. 'monad', 'megaeth', 'aztec'). Get slugs from search_airdrops."),
-    },
-  },
-  async ({ project_id }) => {
-    const project = getAirdropDetails(project_id);
-    return {
-      content: [{ type: "text", text: project ? JSON.stringify({ project }, null, 2) : `Project "${project_id}" not found. Use search_airdrops to see available projects.` }],
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
   }
 );
@@ -115,15 +94,16 @@ server.registerTool(
   "track_wallet",
   {
     title: "Track Wallet",
-    description: "Register a wallet for a specific airdrop project to track snapshot deadlines and portfolio. Most useful for mainnet projects with a snapshot date (e.g. StarkNet). For testnet projects (Monad, MegaETH) use get_airdrop_details instead to see weekly tasks — testnet participation doesn't require wallet registration. Free tier allows 1 project.",
+    description: "Register a wallet address for a specific airdrop project. Use for mainnet/snapshot-based projects where on-chain activity needs to be tracked. After adding a wallet the user's address will be monitored for the snapshot deadline.",
     inputSchema: {
       address: z.string().describe("Ethereum wallet address (0x...)"),
-      project_id: z.string().describe("Project slug to track (e.g. 'monad'). Get from search_airdrops."),
+      project_slug: z.string().describe("Project slug (e.g. 'starknet'). Must match the slug used in subscribe_to_project."),
+      project_name: z.string().describe("Human-readable project name (e.g. 'StarkNet')."),
     },
   },
-  async ({ address, project_id }) => {
+  async ({ address, project_slug, project_name }) => {
     const user_id = getCurrentUserId();
-    const result = await trackWallet(address, project_id, user_id, getCurrentUserIsPro());
+    const result = await trackWallet(address, project_slug, project_name, user_id, getCurrentUserIsPro());
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
@@ -135,7 +115,7 @@ server.registerTool(
   "get_wallet_status",
   {
     title: "Get Wallet Status",
-    description: "Check the status of all your tracked wallets and projects. Shows deadlines, urgency, and upcoming actions.",
+    description: "Check the status of all tracked wallets and their project deadlines.",
     inputSchema: {
       wallet_address: z.string().optional().describe("Filter to a specific wallet address (optional)"),
     },
@@ -154,7 +134,7 @@ server.registerTool(
   "get_portfolio",
   {
     title: "Get Portfolio",
-    description: "Get a full overview of all your tracked airdrops and wallets with estimated pending rewards.",
+    description: "Get a full overview of all subscribed airdrop projects, tracked wallets, and task progress.",
     inputSchema: {},
   },
   async () => {
@@ -198,40 +178,21 @@ server.registerTool(
   }
 );
 
-// ---- get_upcoming_snapshots ----
-server.registerTool(
-  "get_upcoming_snapshots",
-  {
-    title: "Get Upcoming Snapshots",
-    description: "List upcoming airdrop snapshots and deadlines sorted by urgency. Use this to know what needs attention soon.",
-    inputSchema: {
-      days: z.number().optional().describe("How many days ahead to look (default: 90)"),
-    },
-  },
-  async ({ days }) => {
-    const snapshots = getUpcomingSnapshotsList(days ?? 90);
-    const output = { snapshots, total: snapshots.length };
-    return {
-      content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
-    };
-  }
-);
-
 // ---- log_task_completion ----
 server.registerTool(
   "log_task_completion",
   {
     title: "Log Task Completion",
-    description: "Mark a specific airdrop task as completed. Use this after the user confirms they've done a step — like claiming faucet tokens, making transactions, joining Discord, etc. Always log completions so the user can track their progress. Get task_id from get_airdrop_details.",
+    description: "Mark a specific airdrop task as completed. Call this after successfully completing a step — whether done manually by the user or automatically via browser. Use descriptive task_id like 'faucet-claim', 'ambient-swap', 'discord-join'. Auto-subscribes the user to the project if not already subscribed.",
     inputSchema: {
-      project_id: z.string().describe("Project slug (e.g. 'monad', 'starknet'). Get from search_airdrops."),
-      task_id: z.string().describe("Task ID to mark as done (e.g. 'monad-faucet', 'starknet-bridge'). Get from get_airdrop_details."),
-      notes: z.string().optional().describe("Optional note about how it was done or any relevant details"),
+      project_slug: z.string().describe("Project slug (e.g. 'monad', 'starknet')."),
+      task_id: z.string().describe("Short task identifier (e.g. 'faucet-claim', 'ambient-swap', 'discord-join'). Use kebab-case."),
+      notes: z.string().optional().describe("Optional note about how the task was completed"),
     },
   },
-  async ({ project_id, task_id, notes }) => {
+  async ({ project_slug, task_id, notes }) => {
     const user_id = getCurrentUserId();
-    const result = await logTaskCompletion(project_id, task_id, user_id, notes);
+    const result = await logTaskCompletion(project_slug, task_id, user_id, notes);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
@@ -243,14 +204,14 @@ server.registerTool(
   "get_task_progress",
   {
     title: "Get Task Progress",
-    description: "Show the user's progress on all tasks for a specific airdrop project — which steps are done and which are still pending. Use this when the user asks 'what have I done?', 'what's left?', or 'show my progress on Monad'.",
+    description: "Show completed tasks for a specific airdrop project. Use when user asks 'what have I done?' or 'show my progress on Monad'.",
     inputSchema: {
-      project_id: z.string().describe("Project slug (e.g. 'monad', 'starknet'). Get from search_airdrops."),
+      project_slug: z.string().describe("Project slug (e.g. 'monad', 'starknet')."),
     },
   },
-  async ({ project_id }) => {
+  async ({ project_slug }) => {
     const user_id = getCurrentUserId();
-    const result = await getTaskProgress(project_id, user_id);
+    const result = await getTaskProgress(project_slug, user_id);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
@@ -262,14 +223,14 @@ server.registerTool(
   "untrack_project",
   {
     title: "Untrack Project",
-    description: "Stop tracking a project and remove all its wallets. Frees up the free tier slot so you can track a different project. Use when the user changes their mind or wants to switch projects.",
+    description: "Stop tracking a project and remove all its wallets. Frees up the free tier slot.",
     inputSchema: {
-      project_id: z.string().describe("Project slug to stop tracking (e.g. 'starknet'). Get from search_airdrops or get_wallet_status."),
+      project_slug: z.string().describe("Project slug to stop tracking."),
     },
   },
-  async ({ project_id }) => {
+  async ({ project_slug }) => {
     const user_id = getCurrentUserId();
-    const result = await untrackProject(project_id, user_id);
+    const result = await untrackProject(project_slug, user_id);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
@@ -281,16 +242,16 @@ server.registerTool(
   "log_claimed_airdrop",
   {
     title: "Log Claimed Airdrop",
-    description: "Record that you received tokens from an airdrop. Use this after claiming your reward — it saves the token amount and USD value to your history and shows a participation summary. Feeds into get_portfolio total earnings.",
+    description: "Record that the user received tokens from an airdrop. Use after claiming a reward — saves token amount and USD value to history.",
     inputSchema: {
-      project_id: z.string().describe("Project slug (e.g. 'monad', 'starknet'). Get from search_airdrops."),
-      tokens_received: z.string().describe("Tokens received as a string (e.g. '1500 MON', '200 STRK')."),
+      project_slug: z.string().describe("Project slug (e.g. 'monad', 'starknet')."),
+      tokens_received: z.string().describe("Tokens received (e.g. '1500 MON', '200 STRK')."),
       usd_value: z.number().optional().describe("Approximate USD value at time of claim (optional)."),
     },
   },
-  async ({ project_id, tokens_received, usd_value }) => {
+  async ({ project_slug, tokens_received, usd_value }) => {
     const user_id = getCurrentUserId();
-    const result = await logClaimedAirdrop(project_id, user_id, tokens_received, usd_value ?? 0);
+    const result = await logClaimedAirdrop(project_slug, user_id, tokens_received, usd_value ?? 0);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
@@ -357,13 +318,12 @@ app.post("/mcp", async (req: Request, res: Response) => {
   };
 
   const userId =
-    (req.headers["x-mcpize-user-id"] as string) ||      // MCPize: coming soon
-    (req.headers["x-mcpize-user-key"] as string) ||     // MCPize: legacy fallback
+    (req.headers["x-mcpize-user-id"] as string) ||
+    (req.headers["x-mcpize-user-key"] as string) ||
     (req.headers["x-user-key"] as string) ||
     process.env.DEV_USER_ID ||
     "local-dev-user";
 
-  // X-MCPize-Subscription-ID присутствует только у платных подписчиков
   const subscriptionId = req.headers["x-mcpize-subscription-id"] as string | undefined;
   const isPro = !!subscriptionId || process.env.DEV_IS_PRO === "true";
 
@@ -391,8 +351,9 @@ const httpServer = app.listen(port, () => {
   console.log(chalk.bold("🚀 Airdrop Intel MCP"), chalk.cyan(`http://localhost:${port}`));
   console.log(`  ${chalk.gray("Health:")} http://localhost:${port}/health`);
   console.log(`  ${chalk.gray("MCP:")}    http://localhost:${port}/mcp`);
-  console.log(`  ${chalk.gray("Tools:")}  search_airdrops, get_airdrop_details, track_wallet,`);
-  console.log(`           get_wallet_status, get_portfolio, check_sybil_risk, get_upcoming_snapshots`);
+  console.log(`  ${chalk.gray("Tools:")}  subscribe_to_project, track_wallet, get_wallet_status,`);
+  console.log(`           get_portfolio, check_sybil_risk, log_task_completion,`);
+  console.log(`           get_task_progress, untrack_project, log_claimed_airdrop`);
   if (isDev) {
     console.log();
     console.log(chalk.gray("─".repeat(60)));

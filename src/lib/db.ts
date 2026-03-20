@@ -84,7 +84,7 @@ export async function linkMcpizeKey(telegramIdentifier: string, mcpizeKey: strin
 // Wallet tracking helpers
 // ============================================================================
 
-export async function getTrackedWallets(userId: number, projectSlug?: string) {
+export async function getTrackedWallets(userId: string, projectSlug?: string) {
   if (projectSlug) {
     return db.select().from(tracked_wallets)
       .where(and(eq(tracked_wallets.user_id, userId), eq(tracked_wallets.project_slug, projectSlug)))
@@ -93,21 +93,32 @@ export async function getTrackedWallets(userId: number, projectSlug?: string) {
   return db.select().from(tracked_wallets).where(eq(tracked_wallets.user_id, userId)).all();
 }
 
-export async function subscribeToProject(userId: number, projectSlug: string): Promise<void> {
-  await db.insert(subscribed_projects).values({ user_id: userId, project_slug: projectSlug }).onConflictDoNothing();
+export async function subscribeToProject(userId: string, projectSlug: string, projectName = "", deadline?: string): Promise<void> {
+  const existing = await db.select().from(subscribed_projects)
+    .where(and(eq(subscribed_projects.user_id, userId), eq(subscribed_projects.project_slug, projectSlug))).get();
+  if (existing) {
+    // update name/deadline if provided
+    if (projectName || deadline) {
+      await db.update(subscribed_projects)
+        .set({ ...(projectName ? { project_name: projectName } : {}), ...(deadline ? { deadline } : {}) })
+        .where(eq(subscribed_projects.id, existing.id));
+    }
+    return;
+  }
+  await db.insert(subscribed_projects).values({ user_id: userId, project_slug: projectSlug, project_name: projectName, deadline });
 }
 
-export async function unsubscribeFromProject(userId: number, projectSlug: string): Promise<void> {
+export async function unsubscribeFromProject(userId: string, projectSlug: string): Promise<void> {
   await db.delete(subscribed_projects).where(
     and(eq(subscribed_projects.user_id, userId), eq(subscribed_projects.project_slug, projectSlug))
   );
 }
 
-export async function getSubscribedProjects(userId: number) {
+export async function getSubscribedProjects(userId: string) {
   return db.select().from(subscribed_projects).where(eq(subscribed_projects.user_id, userId)).all();
 }
 
-export async function addTrackedWallet(userId: number, walletAddress: string, projectSlug: string, isPro = false): Promise<{ success: boolean; message: string }> {
+export async function addTrackedWallet(userId: string, walletAddress: string, projectSlug: string, projectName = "", isPro = false): Promise<{ success: boolean; message: string }> {
   const user = await getUserById(userId);
   if (!user) return { success: false, message: "User not found" };
 
@@ -130,14 +141,14 @@ export async function addTrackedWallet(userId: number, walletAddress: string, pr
       wallet_address: walletAddress.toLowerCase(),
       project_slug: projectSlug,
     }).onConflictDoNothing();
-    await subscribeToProject(userId, projectSlug);
+    await subscribeToProject(userId, projectSlug, projectName);
     return { success: true, message: "Wallet added to tracker" };
   } catch {
     return { success: false, message: "Failed to add wallet" };
   }
 }
 
-export async function removeTrackedWallet(userId: number, walletAddress: string, projectSlug: string): Promise<boolean> {
+export async function removeTrackedWallet(userId: string, walletAddress: string, projectSlug: string): Promise<boolean> {
   const result = await db.delete(tracked_wallets).where(
     and(
       eq(tracked_wallets.user_id, userId),
@@ -148,7 +159,7 @@ export async function removeTrackedWallet(userId: number, walletAddress: string,
   return (result.rowsAffected ?? 0) > 0;
 }
 
-export async function removeAllWalletsForProject(userId: number, projectSlug: string): Promise<number> {
+export async function removeAllWalletsForProject(userId: string, projectSlug: string): Promise<number> {
   const result = await db.delete(tracked_wallets).where(
     and(eq(tracked_wallets.user_id, userId), eq(tracked_wallets.project_slug, projectSlug))
   );
@@ -167,7 +178,7 @@ export interface UserStats {
   totalWallets: number;
 }
 
-export async function getUserStats(userId: number): Promise<UserStats> {
+export async function getUserStats(userId: string): Promise<UserStats> {
   const [{ projects }] = await db.select({ projects: countDistinct(tracked_wallets.project_slug) })
     .from(tracked_wallets).where(eq(tracked_wallets.user_id, userId));
   const [{ wallets }] = await db.select({ wallets: countDistinct(tracked_wallets.wallet_address) })
@@ -186,7 +197,7 @@ export async function getUserStats(userId: number): Promise<UserStats> {
   };
 }
 
-export async function logToolCall(userId: number | null, toolName: string, channel: "mcp" | "telegram" = "mcp") {
+export async function logToolCall(userId: string | null, toolName: string, channel: "mcp" | "telegram" = "mcp") {
   await db.insert(tool_calls).values({ user_id: userId, tool_name: toolName, channel });
 }
 
@@ -194,16 +205,16 @@ export async function logToolCall(userId: number | null, toolName: string, chann
 // Task completion helpers
 // ============================================================================
 
-export async function addClaimedAirdrop(userId: number, projectSlug: string, tokensReceived: string, usdValue = 0) {
+export async function addClaimedAirdrop(userId: string, projectSlug: string, tokensReceived: string, usdValue = 0) {
   await db.insert(claimed_airdrops).values({ user_id: userId, project_slug: projectSlug, tokens_received: tokensReceived, usd_value: usdValue });
 }
 
-export async function markTaskComplete(userId: number, projectSlug: string, taskId: string, notes?: string) {
+export async function markTaskComplete(userId: string, projectSlug: string, taskId: string, notes?: string) {
   await db.insert(task_completions).values({ user_id: userId, project_slug: projectSlug, task_id: taskId, notes: notes ?? null })
     .onConflictDoNothing();
 }
 
-export async function getCompletedTasks(userId: number, projectSlug: string): Promise<string[]> {
+export async function getCompletedTasks(userId: string, projectSlug: string): Promise<string[]> {
   const rows = await db.select({ task_id: task_completions.task_id })
     .from(task_completions)
     .where(and(eq(task_completions.user_id, userId), eq(task_completions.project_slug, projectSlug)));

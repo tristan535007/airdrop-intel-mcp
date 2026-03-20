@@ -1,87 +1,66 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initDb } from "../src/lib/db.js";
-import { searchAirdrops, getAirdropDetails, trackWallet, untrackProject, getWalletStatus, getPortfolio, getUpcomingSnapshotsList, logTaskCompletion, getTaskProgress, logClaimedAirdrop } from "../src/tools.js";
+import {
+  subscribeToAirdrop,
+  trackWallet,
+  getWalletStatus,
+  getPortfolio,
+  untrackProject,
+  logTaskCompletion,
+  getTaskProgress,
+  logClaimedAirdrop,
+} from "../src/tools.js";
 
 beforeAll(async () => {
   await initDb();
 });
 
-// ============================================================================
-// search_airdrops
-// ============================================================================
-
-describe("searchAirdrops", () => {
-  it("returns all active airdrops with no filters", () => {
-    const result = searchAirdrops({});
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0]).toHaveProperty("slug");
-    expect(result[0]).toHaveProperty("name");
-    expect(result[0]).toHaveProperty("funding_usd_millions");
-    expect(result[0]).toHaveProperty("estimated_reward_usd");
-    expect(result[0]).toHaveProperty("task_count");
-  });
-
-  it("filters by query", () => {
-    const result = searchAirdrops({ query: "monad" });
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0].slug).toBe("monad");
-  });
-
-  it("filters by difficulty", () => {
-    const easy = searchAirdrops({ difficulty: "easy" });
-    expect(easy.every((p) => p.difficulty === "easy")).toBe(true);
-  });
-
-  it("filters by min_funding", () => {
-    const result = searchAirdrops({ min_funding: 200 });
-    expect(result.every((p) => p.funding_usd_millions >= 200)).toBe(true);
-  });
-
-  it("finds by tag 'layer2'", () => {
-    const result = searchAirdrops({ query: "layer2" });
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  it("finds by tag 'zk'", () => {
-    const result = searchAirdrops({ query: "zk" });
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  it("returns results sorted by funding descending", () => {
-    const result = searchAirdrops({});
-    for (let i = 1; i < result.length; i++) {
-      expect(result[i].funding_usd_millions).toBeLessThanOrEqual(result[i - 1].funding_usd_millions);
-    }
-  });
-});
+const TEST_WALLET = "0x742d35Cc6634C0532925a3b8D4C9B1DAB8Adf35b";
 
 // ============================================================================
-// get_airdrop_details
+// subscribe_to_project
 // ============================================================================
 
-describe("getAirdropDetails", () => {
-  it("returns full details for a known project", () => {
-    const result = getAirdropDetails("monad");
-    expect(result).not.toBeNull();
-    expect(result!.slug).toBe("monad");
-    expect(result!.tasks.length).toBeGreaterThan(0);
-    expect(result!.required_tx_per_week).toBeGreaterThan(0);
-    expect(result!.total_estimated_minutes).toBeGreaterThan(0);
+describe("subscribeToAirdrop", () => {
+  it("subscribes user to a project", async () => {
+    const user = `test-sub-${Date.now()}`;
+    const result = await subscribeToAirdrop("monad", "Monad", user);
+    expect(result.success).toBe(true);
+    expect(result.project_slug).toBe("monad");
+    expect(result.upgrade_required).toBe(false);
   });
 
-  it("returns tasks with required fields", () => {
-    const result = getAirdropDetails("monad");
-    result!.tasks.forEach((task) => {
-      expect(task).toHaveProperty("id");
-      expect(task).toHaveProperty("title");
-      expect(task).toHaveProperty("type");
-      expect(task).toHaveProperty("automated");
-    });
+  it("is idempotent — subscribing twice is fine", async () => {
+    const user = `test-sub-idem-${Date.now()}`;
+    await subscribeToAirdrop("monad", "Monad", user);
+    const result = await subscribeToAirdrop("monad", "Monad", user);
+    expect(result.success).toBe(true);
   });
 
-  it("returns null for unknown project", () => {
-    const result = getAirdropDetails("nonexistent-project-xyz");
-    expect(result).toBeNull();
+  it("enforces free tier limit on second project", async () => {
+    const user = `test-sub-tier-${Date.now()}`;
+    const r1 = await subscribeToAirdrop("monad", "Monad", user);
+    expect(r1.success).toBe(true);
+    const r2 = await subscribeToAirdrop("megaeth", "MegaETH", user);
+    expect(r2.success).toBe(false);
+    expect(r2.upgrade_required).toBe(true);
+    expect(r2.message).toContain("FREE_TIER_LIMIT");
+  });
+
+  it("pro user can subscribe to multiple projects", async () => {
+    const user = `test-sub-pro-${Date.now()}`;
+    const r1 = await subscribeToAirdrop("monad", "Monad", user, true);
+    expect(r1.success).toBe(true);
+    const r2 = await subscribeToAirdrop("megaeth", "MegaETH", user, true);
+    expect(r2.success).toBe(true);
+  });
+
+  it("stores deadline when provided", async () => {
+    const user = `test-sub-deadline-${Date.now()}`;
+    await subscribeToAirdrop("starknet", "StarkNet", user, false, "2026-09-01");
+    const portfolio = await getPortfolio(user);
+    const project = portfolio.projects.find((p) => p.slug === "starknet");
+    expect(project?.deadline).toBe("2026-09-01");
   });
 });
 
@@ -89,60 +68,36 @@ describe("getAirdropDetails", () => {
 // track_wallet
 // ============================================================================
 
-const TEST_USER = `test-user-vitest-${Date.now()}`;
-const TEST_WALLET = "0x742d35Cc6634C0532925a3b8D4C9B1DAB8Adf35b";
-
 describe("trackWallet", () => {
   it("adds a valid wallet successfully", async () => {
-    const result = await trackWallet(TEST_WALLET, "monad", TEST_USER);
+    const user = `test-wallet-${Date.now()}`;
+    const result = await trackWallet(TEST_WALLET, "monad", "Monad", user);
     expect(result.success).toBe(true);
     expect(result.upgrade_required).toBe(false);
     expect(result.project_name).toBe("Monad");
   });
 
   it("rejects invalid wallet address", async () => {
-    const result = await trackWallet("not-a-wallet", "monad", TEST_USER);
+    const result = await trackWallet("not-a-wallet", "monad", "Monad", `user-${Date.now()}`);
     expect(result.success).toBe(false);
     expect(result.message).toContain("Invalid wallet");
   });
 
-  it("rejects unknown project", async () => {
-    const result = await trackWallet(TEST_WALLET, "unknown-project-xyz", TEST_USER);
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("not found");
-  });
-
   it("enforces free tier limit on second project", async () => {
-    const user2 = `test-user-tier-${Date.now()}`;
-    const r1 = await trackWallet(TEST_WALLET, "monad", user2);
+    const user = `test-wallet-tier-${Date.now()}`;
+    const r1 = await trackWallet(TEST_WALLET, "monad", "Monad", user);
     expect(r1.success).toBe(true);
-    const r2 = await trackWallet(TEST_WALLET, "megaeth", user2);
+    const r2 = await trackWallet(TEST_WALLET, "megaeth", "MegaETH", user);
     expect(r2.success).toBe(false);
     expect(r2.upgrade_required).toBe(true);
-    expect(r2.message).toContain("FREE_TIER_LIMIT");
   });
 
-  it("after untrack, free tier slot is freed up", async () => {
-    const user3 = `test-user-untrack-${Date.now()}`;
-    await trackWallet(TEST_WALLET, "monad", user3);
-    // Second project blocked
-    const blocked = await trackWallet(TEST_WALLET, "megaeth", user3);
-    expect(blocked.success).toBe(false);
-    // Untrack monad
-    const removed = await untrackProject("monad", user3);
-    expect(removed.success).toBe(true);
-    // Now can add megaeth
-    const r2 = await trackWallet(TEST_WALLET, "megaeth", user3);
-    expect(r2.success).toBe(true);
-  });
-
-  it("pro user can track multiple projects without limit", async () => {
-    const proUser = `test-user-pro-${Date.now()}`;
-    const r1 = await trackWallet(TEST_WALLET, "monad", proUser, true);
+  it("pro user can track multiple projects", async () => {
+    const user = `test-wallet-pro-${Date.now()}`;
+    const r1 = await trackWallet(TEST_WALLET, "monad", "Monad", user, true);
     expect(r1.success).toBe(true);
-    const r2 = await trackWallet(TEST_WALLET, "megaeth", proUser, true);
+    const r2 = await trackWallet(TEST_WALLET, "megaeth", "MegaETH", user, true);
     expect(r2.success).toBe(true);
-    expect(r2.upgrade_required).toBe(false);
   });
 });
 
@@ -152,16 +107,26 @@ describe("trackWallet", () => {
 
 describe("getWalletStatus", () => {
   it("returns tracked wallets for existing user", async () => {
-    const result = await getWalletStatus(TEST_USER);
-    expect(result).toHaveProperty("tracked_count");
-    expect(result).toHaveProperty("statuses");
+    const user = `test-wstatus-${Date.now()}`;
+    await trackWallet(TEST_WALLET, "monad", "Monad", user);
+    const result = await getWalletStatus(user);
     expect(result.tracked_count).toBeGreaterThan(0);
+    expect(result.statuses[0].wallet).toBe(TEST_WALLET.toLowerCase());
   });
 
   it("returns empty for new user", async () => {
-    const result = await getWalletStatus(`brand-new-user-${Date.now()}`);
+    const result = await getWalletStatus(`brand-new-${Date.now()}`);
     expect(result.tracked_count).toBe(0);
-    expect(result.statuses).toHaveLength(0);
+  });
+
+  it("shows deadline urgency when deadline is set", async () => {
+    const user = `test-urgency-${Date.now()}`;
+    await subscribeToAirdrop("starknet", "StarkNet", user, false, "2026-09-01");
+    await trackWallet(TEST_WALLET, "starknet", "StarkNet", user);
+    const result = await getWalletStatus(user);
+    const status = result.statuses.find((s) => s.project_slug === "starknet");
+    expect(status?.deadline).toBe("2026-09-01");
+    expect(status?.urgency).toBeDefined();
   });
 });
 
@@ -170,76 +135,28 @@ describe("getWalletStatus", () => {
 // ============================================================================
 
 describe("untrackProject", () => {
-  it("removes subscription for a mainnet project with wallet", async () => {
-    const user = `test-user-untrack2-${Date.now()}`;
-    await trackWallet(TEST_WALLET, "starknet", user);
-    const result = await untrackProject("starknet", user);
-    expect(result.success).toBe(true);
-    expect(result.project_slug).toBe("starknet");
-    // portfolio should no longer show starknet
-    const portfolio = await getPortfolio(user);
-    expect(portfolio.projects.find((p: { slug: string }) => p.slug === "starknet")).toBeUndefined();
-  });
-
-  it("removes subscription for a testnet project (no wallet)", async () => {
-    const user = `test-user-untrack3-${Date.now()}`;
-    await logTaskCompletion("monad", "monad-faucet", user); // auto-subscribes
+  it("removes subscription and wallets", async () => {
+    const user = `test-untrack-${Date.now()}`;
+    await trackWallet(TEST_WALLET, "monad", "Monad", user);
     const result = await untrackProject("monad", user);
     expect(result.success).toBe(true);
     const portfolio = await getPortfolio(user);
-    expect(portfolio.projects.find((p: { slug: string }) => p.slug === "monad")).toBeUndefined();
+    expect(portfolio.projects.find((p) => p.slug === "monad")).toBeUndefined();
   });
 
-  it("returns error for unknown project", async () => {
-    const result = await untrackProject("unknown-xyz", TEST_USER);
-    expect(result.success).toBe(false);
-  });
-});
-
-// ============================================================================
-// subscribed_projects — core subscription behaviour
-// ============================================================================
-
-describe("subscription behaviour", () => {
-  it("logTaskCompletion auto-subscribes user and project appears in portfolio", async () => {
-    const user = `test-sub-testnet-${Date.now()}`;
-    await logTaskCompletion("monad", "monad-faucet", user);
-    const portfolio = await getPortfolio(user);
-    expect(portfolio.projects.find((p: { slug: string }) => p.slug === "monad")).toBeDefined();
-  });
-
-  it("trackWallet auto-subscribes user and project appears in portfolio", async () => {
-    const user = `test-sub-mainnet-${Date.now()}`;
-    await trackWallet(TEST_WALLET, "starknet", user);
-    const portfolio = await getPortfolio(user);
-    expect(portfolio.projects.find((p: { slug: string }) => p.slug === "starknet")).toBeDefined();
-  });
-
-  it("testnet project in portfolio shows tasks_completed even without wallet", async () => {
-    const user = `test-sub-tasks-${Date.now()}`;
-    await logTaskCompletion("monad", "monad-faucet", user);
-    await logTaskCompletion("monad", "monad-txns", user);
-    const portfolio = await getPortfolio(user);
-    const monad = portfolio.projects.find((p: { slug: string }) => p.slug === "monad");
-    expect(monad).toBeDefined();
-    expect(monad.tasks_completed).toBe(2);
-  });
-
-  it("free tier blocks second project subscription via task completion", async () => {
-    const user = `test-sub-freetier-${Date.now()}`;
-    // Subscribe to monad via task
-    await logTaskCompletion("monad", "monad-faucet", user);
-    // Try to subscribe to second project via track_wallet
-    const r = await trackWallet(TEST_WALLET, "starknet", user);
-    expect(r.success).toBe(false);
-    expect(r.upgrade_required).toBe(true);
-  });
-
-  it("after untrack, free tier slot freed and new project can be added", async () => {
-    const user = `test-sub-swap-${Date.now()}`;
-    await logTaskCompletion("monad", "monad-faucet", user);
+  it("removes testnet subscription (no wallet)", async () => {
+    const user = `test-untrack-testnet-${Date.now()}`;
+    await logTaskCompletion("monad", "faucet-claim", user);
     await untrackProject("monad", user);
-    const r = await trackWallet(TEST_WALLET, "starknet", user);
+    const portfolio = await getPortfolio(user);
+    expect(portfolio.projects.find((p) => p.slug === "monad")).toBeUndefined();
+  });
+
+  it("after untrack, free tier slot is freed", async () => {
+    const user = `test-untrack-free-${Date.now()}`;
+    await subscribeToAirdrop("monad", "Monad", user);
+    await untrackProject("monad", user);
+    const r = await subscribeToAirdrop("megaeth", "MegaETH", user);
     expect(r.success).toBe(true);
   });
 });
@@ -249,45 +166,35 @@ describe("subscription behaviour", () => {
 // ============================================================================
 
 describe("getPortfolio", () => {
-  it("returns portfolio for a user with tracked wallets", async () => {
-    const result = await getPortfolio(TEST_USER);
-    expect(result).toHaveProperty("tier");
-    expect(result).toHaveProperty("total_projects");
-    expect(result).toHaveProperty("projects");
-    expect(result.total_projects).toBeGreaterThan(0);
-    expect(result.projects[0].wallets.length).toBeGreaterThan(0);
+  it("returns portfolio for subscribed user", async () => {
+    const user = `test-portfolio-${Date.now()}`;
+    await subscribeToAirdrop("monad", "Monad", user);
+    const result = await getPortfolio(user);
+    expect(result.total_projects).toBe(1);
+    expect(result.projects[0].slug).toBe("monad");
+    expect(result.projects[0].name).toBe("Monad");
   });
 
   it("returns empty portfolio for new user", async () => {
-    const result = await getPortfolio(`brand-new-user-${Date.now()}`);
+    const result = await getPortfolio(`brand-new-${Date.now()}`);
     expect(result.total_projects).toBe(0);
-    expect(result.projects.length).toBe(0);
-  });
-});
-
-// ============================================================================
-// get_upcoming_snapshots
-// ============================================================================
-
-describe("getUpcomingSnapshotsList", () => {
-  it("returns snapshots within the specified window", () => {
-    const result = getUpcomingSnapshotsList(365);
-    expect(Array.isArray(result)).toBe(true);
-    result.forEach((s) => {
-      expect(s).toHaveProperty("project_slug");
-      expect(s).toHaveProperty("days_remaining");
-      expect(s).toHaveProperty("urgency");
-      expect(s.days_remaining).toBeGreaterThanOrEqual(0);
-    });
+    expect(result.projects).toHaveLength(0);
   });
 
-  it("urgency is correct based on days_remaining", () => {
-    const all = getUpcomingSnapshotsList(365);
-    all.forEach((s) => {
-      if (s.days_remaining < 3) expect(s.urgency).toBe("urgent");
-      else if (s.days_remaining < 14) expect(s.urgency).toBe("soon");
-      else expect(s.urgency).toBe("ok");
-    });
+  it("shows tasks_completed in portfolio", async () => {
+    const user = `test-portfolio-tasks-${Date.now()}`;
+    await logTaskCompletion("monad", "faucet-claim", user);
+    await logTaskCompletion("monad", "ambient-swap", user);
+    const result = await getPortfolio(user);
+    const monad = result.projects.find((p) => p.slug === "monad");
+    expect(monad?.tasks_completed).toBe(2);
+  });
+
+  it("testnet project appears without wallet", async () => {
+    const user = `test-portfolio-testnet-${Date.now()}`;
+    await logTaskCompletion("monad", "faucet-claim", user);
+    const result = await getPortfolio(user);
+    expect(result.projects.find((p) => p.slug === "monad")).toBeDefined();
   });
 });
 
@@ -295,55 +202,43 @@ describe("getUpcomingSnapshotsList", () => {
 // log_task_completion + get_task_progress
 // ============================================================================
 
-const PROGRESS_USER = `test-user-progress-${Date.now()}`;
-
 describe("logTaskCompletion", () => {
-  it("marks a known task as completed", async () => {
-    const result = await logTaskCompletion("monad", "monad-faucet", PROGRESS_USER);
+  it("marks a task as completed", async () => {
+    const user = `test-task-${Date.now()}`;
+    const result = await logTaskCompletion("monad", "faucet-claim", user);
     expect(result.success).toBe(true);
-    expect(result.task_id).toBe("monad-faucet");
-    expect(result.project_slug).toBe("monad");
+    expect(result.task_id).toBe("faucet-claim");
   });
 
-  it("returns error for unknown project", async () => {
-    const result = await logTaskCompletion("unknown-xyz", "some-task", PROGRESS_USER);
-    expect(result.success).toBe(false);
-  });
-
-  it("returns error for unknown task_id", async () => {
-    const result = await logTaskCompletion("monad", "nonexistent-task", PROGRESS_USER);
-    expect(result.success).toBe(false);
-  });
-
-  it("marking same task twice is idempotent", async () => {
-    await logTaskCompletion("monad", "monad-txns", PROGRESS_USER);
-    const result = await logTaskCompletion("monad", "monad-txns", PROGRESS_USER);
+  it("is idempotent — marking same task twice is fine", async () => {
+    const user = `test-task-idem-${Date.now()}`;
+    await logTaskCompletion("monad", "faucet-claim", user);
+    const result = await logTaskCompletion("monad", "faucet-claim", user);
     expect(result.success).toBe(true);
+  });
+
+  it("auto-subscribes user to project", async () => {
+    const user = `test-task-autosub-${Date.now()}`;
+    await logTaskCompletion("monad", "faucet-claim", user);
+    const portfolio = await getPortfolio(user);
+    expect(portfolio.projects.find((p) => p.slug === "monad")).toBeDefined();
   });
 });
 
 describe("getTaskProgress", () => {
-  it("shows completed and pending tasks for a project", async () => {
-    const result = await getTaskProgress("monad", PROGRESS_USER);
-    expect(result.project_name).toBe("Monad");
-    expect(result.total_tasks).toBeGreaterThan(0);
-    expect(result.completed_count).toBeGreaterThanOrEqual(2); // faucet + txns
-    expect(result.tasks).toBeDefined();
-    result.tasks.forEach((t: { task_id: string; completed: boolean }) => {
-      expect(t).toHaveProperty("task_id");
-      expect(t).toHaveProperty("completed");
-    });
+  it("shows completed tasks", async () => {
+    const user = `test-progress-${Date.now()}`;
+    await logTaskCompletion("monad", "faucet-claim", user);
+    await logTaskCompletion("monad", "ambient-swap", user);
+    const result = await getTaskProgress("monad", user);
+    expect(result.completed_count).toBe(2);
+    expect(result.completed_tasks).toContain("faucet-claim");
+    expect(result.completed_tasks).toContain("ambient-swap");
   });
 
-  it("returns empty progress for new user", async () => {
+  it("returns zero for new user", async () => {
     const result = await getTaskProgress("monad", `brand-new-${Date.now()}`);
     expect(result.completed_count).toBe(0);
-    expect(result.tasks.every((t: { completed: boolean }) => !t.completed)).toBe(true);
-  });
-
-  it("returns error for unknown project", async () => {
-    const result = await getTaskProgress("unknown-xyz", PROGRESS_USER);
-    expect(result.success).toBe(false);
   });
 });
 
@@ -351,32 +246,19 @@ describe("getTaskProgress", () => {
 // log_claimed_airdrop
 // ============================================================================
 
-const CLAIM_USER = `test-user-claim-${Date.now()}`;
-
 describe("logClaimedAirdrop", () => {
-  it("logs a claimed airdrop with usd_value", async () => {
-    const result = await logClaimedAirdrop("monad", CLAIM_USER, "1500 MON", 750);
+  it("logs a claimed airdrop", async () => {
+    const user = `test-claim-${Date.now()}`;
+    const result = await logClaimedAirdrop("monad", user, "1500 MON", 750);
     expect(result.success).toBe(true);
-    expect(result.project_slug).toBe("monad");
     expect(result.tokens_received).toBe("1500 MON");
     expect(result.usd_value).toBe(750);
   });
 
-  it("logs a claimed airdrop without usd_value", async () => {
-    const result = await logClaimedAirdrop("starknet", CLAIM_USER, "200 STRK");
+  it("works without usd_value", async () => {
+    const user = `test-claim-nousd-${Date.now()}`;
+    const result = await logClaimedAirdrop("starknet", user, "200 STRK");
     expect(result.success).toBe(true);
     expect(result.usd_value).toBe(0);
-  });
-
-  it("includes tasks_completed in summary", async () => {
-    await logTaskCompletion("monad", "monad-faucet", CLAIM_USER);
-    const result = await logClaimedAirdrop("monad", CLAIM_USER, "1500 MON", 750);
-    expect(result.participation_summary.tasks_completed).toBeGreaterThanOrEqual(1);
-    expect(result.participation_summary.tasks_total).toBeGreaterThan(0);
-  });
-
-  it("returns error for unknown project", async () => {
-    const result = await logClaimedAirdrop("unknown-xyz", CLAIM_USER, "100 XYZ");
-    expect(result.success).toBe(false);
   });
 });

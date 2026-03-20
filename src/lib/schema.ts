@@ -40,6 +40,8 @@ export const subscribed_projects = sqliteTable("subscribed_projects", {
   id: text("id").primaryKey().$defaultFn(() => nanoid()),
   user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   project_slug: text("project_slug").notNull(),
+  project_name: text("project_name").notNull().default(""),
+  deadline: text("deadline"),
   joined_at: text("joined_at").notNull().default(sql`(datetime('now'))`),
 });
 

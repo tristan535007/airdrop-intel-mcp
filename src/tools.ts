@@ -3,74 +3,48 @@
  * Each function is registered as an MCP tool in index.ts.
  */
 
-import { searchProjects, getProjectBySlug, getUpcomingSnapshots } from "./lib/airdrop-data.js";
-import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser, markTaskComplete, getCompletedTasks, addClaimedAirdrop, removeAllWalletsForProject, subscribeToProject, unsubscribeFromProject, getSubscribedProjects } from "./lib/db.js";
+import {
+  addTrackedWallet,
+  getTrackedWallets,
+  getUserStats,
+  getOrCreateUserByMcpizeKey,
+  getOrCreateUser,
+  markTaskComplete,
+  getCompletedTasks,
+  addClaimedAirdrop,
+  removeAllWalletsForProject,
+  subscribeToProject,
+  unsubscribeFromProject,
+  getSubscribedProjects,
+} from "./lib/db.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 
 // ============================================================================
-// Tool: search_airdrops
+// Tool: subscribe_to_project
 // ============================================================================
 
-export interface SearchAirdropsInput {
-  query?: string;
-  chains?: string[];
-  difficulty?: "easy" | "medium" | "hard";
-  min_funding?: number;
-}
+export async function subscribeToAirdrop(projectSlug: string, projectName: string, userId: string, isPro = false, deadline?: string) {
+  const user = await getOrCreateUser(userId);
 
-export function searchAirdrops(input: SearchAirdropsInput) {
-  const projects = searchProjects(input.query, input.chains, input.difficulty, input.min_funding);
-  return projects.map((p) => ({
-    slug: p.slug,
-    name: p.name,
-    description: p.description,
-    chains: p.chains,
-    funding_usd_millions: p.funding,
-    difficulty: p.difficulty,
-    deadline: p.deadline,
-    snapshot_date: p.snapshotDate,
-    has_snapshot: !!p.snapshotDate,
-    participation_type: p.snapshotDate ? "mainnet — track wallet for snapshot" : "testnet — do weekly tasks",
-    estimated_reward_usd: `$${p.estimatedRewardMin}–$${p.estimatedRewardMax}`,
-    status: p.status,
-    task_count: p.tasks.length,
-    official_url: p.officialUrl,
-  }));
-}
+  if (!isPro && user.tier === "free") {
+    const subscribed = await getSubscribedProjects(user.id);
+    const alreadyIn = subscribed.some((s) => s.project_slug === projectSlug);
+    if (subscribed.length >= 1 && !alreadyIn) {
+      return {
+        success: false,
+        upgrade_required: true,
+        message: "FREE_TIER_LIMIT: You can track 1 project on the free plan. Upgrade to Pro ($15/mo) to track unlimited projects.",
+      };
+    }
+  }
 
-// ============================================================================
-// Tool: get_airdrop_details
-// ============================================================================
-
-export function getAirdropDetails(projectId: string) {
-  const project = getProjectBySlug(projectId);
-  if (!project) return null;
-
+  await subscribeToProject(user.id, projectSlug, projectName, deadline);
   return {
-    slug: project.slug,
-    name: project.name,
-    description: project.description,
-    chains: project.chains,
-    funding_usd_millions: project.funding,
-    difficulty: project.difficulty,
-    deadline: project.deadline,
-    snapshot_date: project.snapshotDate,
-    estimated_reward_usd: `$${project.estimatedRewardMin}–$${project.estimatedRewardMax}`,
-    status: project.status,
-    notes: project.notes,
-    official_url: project.officialUrl,
-    required_tx_per_week: project.requiredTxPerWeek,
-    required_protocols: project.requiredProtocols,
-    tasks: project.tasks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      description: t.description,
-      type: t.type,
-      automated: t.automated,
-      estimated_minutes: t.estimatedMinutes,
-      links: t.links || [],
-    })),
-    total_estimated_minutes: project.tasks.reduce((s, t) => s + t.estimatedMinutes, 0),
+    success: true,
+    upgrade_required: false,
+    project_slug: projectSlug,
+    project_name: projectName,
+    message: `Subscribed to ${projectName}. Use log_task_completion to track your progress.`,
   };
 }
 
@@ -78,25 +52,20 @@ export function getAirdropDetails(projectId: string) {
 // Tool: track_wallet
 // ============================================================================
 
-export async function trackWallet(address: string, projectId: string, userId: string, isPro = false) {
+export async function trackWallet(address: string, projectSlug: string, projectName: string, userId: string, isPro = false) {
   if (!address.match(/^0x[a-fA-F0-9]{40}$/)) {
     return { success: false, message: "Invalid wallet address. Must be a 42-character hex string starting with 0x.", upgrade_required: false };
   }
 
-  const project = getProjectBySlug(projectId);
-  if (!project) {
-    return { success: false, message: `Project "${projectId}" not found. Use search_airdrops to find valid project IDs.`, upgrade_required: false };
-  }
-
   const user = await getOrCreateUser(userId);
-  const result = await addTrackedWallet(user.id, address, projectId, isPro);
+  const result = await addTrackedWallet(user.id, address, projectSlug, projectName, isPro);
 
   return {
     success: result.success,
     message: result.message,
     wallet: address,
-    project_name: project.name,
-    project_slug: projectId,
+    project_name: projectName,
+    project_slug: projectSlug,
     upgrade_required: result.message.startsWith("FREE_TIER_LIMIT"),
   };
 }
@@ -108,13 +77,16 @@ export async function trackWallet(address: string, projectId: string, userId: st
 export async function getWalletStatus(userId: string, walletAddress?: string) {
   const user = await getOrCreateUser(userId);
   const tracked = await getTrackedWallets(user.id);
+  const subscribed = await getSubscribedProjects(user.id);
+
+  const deadlineBySlug = Object.fromEntries(subscribed.map((s) => [s.project_slug, s.deadline]));
+
   const filtered = walletAddress
     ? tracked.filter((t) => t.wallet_address.toLowerCase() === walletAddress.toLowerCase())
     : tracked;
 
   const statuses = filtered.map((t) => {
-    const project = getProjectBySlug(t.project_slug);
-    const deadlineStr = project?.snapshotDate || project?.deadline || null;
+    const deadlineStr = deadlineBySlug[t.project_slug] ?? null;
     let daysUntil: number | null = null;
     let urgency: "ok" | "soon" | "urgent" | "overdue" = "ok";
 
@@ -128,7 +100,6 @@ export async function getWalletStatus(userId: string, walletAddress?: string) {
 
     return {
       wallet: t.wallet_address,
-      project_name: project?.name || t.project_slug,
       project_slug: t.project_slug,
       deadline: deadlineStr,
       days_until_deadline: daysUntil,
@@ -159,34 +130,21 @@ export async function getPortfolio(userId: string) {
     return acc;
   }, {});
 
-  let pendingMin = 0;
-  let pendingMax = 0;
-
   const projects = await Promise.all(subscribed.map(async (sub) => {
-    const slug = sub.project_slug;
-    const project = getProjectBySlug(slug);
-    const wallets = walletsByProject[slug] || [];
-    const completedTasks = await getCompletedTasks(user.id, slug);
-    const deadlineStr = project?.snapshotDate || project?.deadline || null;
+    const wallets = walletsByProject[sub.project_slug] || [];
+    const completedTasks = await getCompletedTasks(user.id, sub.project_slug);
+    const deadlineStr = sub.deadline ?? null;
     let daysUntil: number | null = null;
     if (deadlineStr) {
       daysUntil = Math.floor((new Date(deadlineStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     }
-    if (project) {
-      const walletCount = Math.max(wallets.length, 1);
-      pendingMin += project.estimatedRewardMin * walletCount;
-      pendingMax += project.estimatedRewardMax * walletCount;
-    }
     return {
-      slug,
-      name: project?.name || slug,
+      slug: sub.project_slug,
+      name: sub.project_name || sub.project_slug,
       wallets,
       tasks_completed: completedTasks.length,
-      tasks_total: project?.tasks.length ?? 0,
       deadline: deadlineStr,
       days_until_deadline: daysUntil,
-      estimated_reward_usd: project ? `$${project.estimatedRewardMin}–$${project.estimatedRewardMax}` : "unknown",
-      difficulty: project?.difficulty || "unknown",
     };
   }));
 
@@ -196,55 +154,23 @@ export async function getPortfolio(userId: string) {
     total_projects: subscribed.length,
     total_wallets: stats.totalWallets,
     claimed_airdrops: stats.claimedAirdrops,
-    estimated_pending_usd: `$${pendingMin}–$${pendingMax}`,
     projects: projects.sort((a, b) => (a.days_until_deadline ?? 9999) - (b.days_until_deadline ?? 9999)),
   };
-}
-
-// ============================================================================
-// Tool: get_upcoming_snapshots
-// ============================================================================
-
-export function getUpcomingSnapshotsList(days: number = 90) {
-  const projects = getUpcomingSnapshots(days);
-  return projects.map((p) => {
-    const dateStr = p.snapshotDate || p.deadline || "";
-    const daysRemaining = Math.floor((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return {
-      project_slug: p.slug,
-      project_name: p.name,
-      date: dateStr,
-      type: p.snapshotDate ? "snapshot" : "deadline",
-      days_remaining: daysRemaining,
-      urgency: daysRemaining < 3 ? "urgent" : daysRemaining < 14 ? "soon" : "ok",
-      estimated_reward_usd: `$${p.estimatedRewardMin}–$${p.estimatedRewardMax}`,
-    };
-  });
 }
 
 // ============================================================================
 // Tool: log_task_completion
 // ============================================================================
 
-export async function logTaskCompletion(projectId: string, taskId: string, userId: string, notes?: string) {
-  const project = getProjectBySlug(projectId);
-  if (!project) {
-    return { success: false, message: `Project "${projectId}" not found. Use search_airdrops to find valid project IDs.` };
-  }
-  const task = project.tasks.find((t) => t.id === taskId);
-  if (!task) {
-    return { success: false, message: `Task "${taskId}" not found in project "${projectId}". Use get_airdrop_details to see valid task IDs.` };
-  }
+export async function logTaskCompletion(projectSlug: string, taskId: string, userId: string, notes?: string) {
   const user = await getOrCreateUser(userId);
-  await markTaskComplete(user.id, projectId, taskId, notes);
-  await subscribeToProject(user.id, projectId);
+  await markTaskComplete(user.id, projectSlug, taskId, notes);
+  await subscribeToProject(user.id, projectSlug);
   return {
     success: true,
-    project_slug: projectId,
-    project_name: project.name,
+    project_slug: projectSlug,
     task_id: taskId,
-    task_title: task.title,
-    message: `Task "${task.title}" marked as completed.`,
+    message: `Task "${taskId}" marked as completed for ${projectSlug}.`,
   };
 }
 
@@ -252,33 +178,16 @@ export async function logTaskCompletion(projectId: string, taskId: string, userI
 // Tool: get_task_progress
 // ============================================================================
 
-export async function getTaskProgress(projectId: string, userId: string) {
-  const project = getProjectBySlug(projectId);
-  if (!project) {
-    return { success: false, message: `Project "${projectId}" not found.` };
-  }
+export async function getTaskProgress(projectSlug: string, userId: string) {
   const user = await getOrCreateUser(userId);
-  const completed = await getCompletedTasks(user.id, projectId);
-  const completedSet = new Set(completed);
-
-  const tasks = project.tasks.map((t) => ({
-    task_id: t.id,
-    title: t.title,
-    type: t.type,
-    automated: t.automated,
-    completed: completedSet.has(t.id),
-    hint: t.automated
-      ? "Can be done manually — follow the steps in get_airdrop_details"
-      : "Manual step required — see links in get_airdrop_details",
-  }));
+  const completed = await getCompletedTasks(user.id, projectSlug);
+  const sub = (await getSubscribedProjects(user.id)).find((s) => s.project_slug === projectSlug);
 
   return {
-    project_name: project.name,
-    project_slug: projectId,
-    total_tasks: tasks.length,
+    project_slug: projectSlug,
+    project_name: sub?.project_name || projectSlug,
+    completed_tasks: completed,
     completed_count: completed.length,
-    progress_pct: Math.round((completed.length / tasks.length) * 100),
-    tasks,
   };
 }
 
@@ -286,20 +195,15 @@ export async function getTaskProgress(projectId: string, userId: string) {
 // Tool: untrack_project
 // ============================================================================
 
-export async function untrackProject(projectId: string, userId: string) {
-  const project = getProjectBySlug(projectId);
-  if (!project) {
-    return { success: false, message: `Project "${projectId}" not found. Use search_airdrops to find valid project IDs.` };
-  }
+export async function untrackProject(projectSlug: string, userId: string) {
   const user = await getOrCreateUser(userId);
-  const removed = await removeAllWalletsForProject(user.id, projectId);
-  await unsubscribeFromProject(user.id, projectId);
+  const removed = await removeAllWalletsForProject(user.id, projectSlug);
+  await unsubscribeFromProject(user.id, projectSlug);
   return {
     success: true,
-    project_slug: projectId,
-    project_name: project.name,
+    project_slug: projectSlug,
     wallets_removed: removed,
-    message: `Stopped tracking ${project.name}. Your free tier slot is now available.`,
+    message: `Stopped tracking ${projectSlug}. Your free tier slot is now available.`,
   };
 }
 
@@ -307,25 +211,17 @@ export async function untrackProject(projectId: string, userId: string) {
 // Tool: log_claimed_airdrop
 // ============================================================================
 
-export async function logClaimedAirdrop(projectId: string, userId: string, tokensReceived: string, usdValue = 0) {
-  const project = getProjectBySlug(projectId);
-  if (!project) {
-    return { success: false, message: `Project "${projectId}" not found. Use search_airdrops to find valid project IDs.` };
-  }
+export async function logClaimedAirdrop(projectSlug: string, userId: string, tokensReceived: string, usdValue = 0) {
   const user = await getOrCreateUser(userId);
-  await addClaimedAirdrop(user.id, projectId, tokensReceived, usdValue);
-  const completed = await getCompletedTasks(user.id, projectId);
+  await addClaimedAirdrop(user.id, projectSlug, tokensReceived, usdValue);
+  const completed = await getCompletedTasks(user.id, projectSlug);
   return {
     success: true,
-    project_slug: projectId,
-    project_name: project.name,
+    project_slug: projectSlug,
     tokens_received: tokensReceived,
     usd_value: usdValue,
-    message: `Recorded: ${tokensReceived}${usdValue ? ` (~$${usdValue})` : ""} from ${project.name}.`,
-    participation_summary: {
-      tasks_completed: completed.length,
-      tasks_total: project.tasks.length,
-    },
+    message: `Recorded: ${tokensReceived}${usdValue ? ` (~$${usdValue})` : ""} from ${projectSlug}.`,
+    tasks_completed: completed.length,
   };
 }
 
