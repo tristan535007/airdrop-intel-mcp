@@ -1,127 +1,174 @@
-# MCP Server Development Guide
+# Airdrop Intel MCP — Developer Guide
 
-This is an MCP (Model Context Protocol) server template for MCPize hosting platform.
+Crypto airdrop tracker and assistant. Dual distribution: MCP server (MCPize) + Telegram bot.
 
 ## Project Structure
 
 ```
-├── src/
-│   ├── index.ts      # Main server entry point
-│   └── tools.ts      # Pure tool functions (testable)
-├── tests/
-│   └── tools.test.ts # Tool unit tests
-├── package.json      # Dependencies and scripts
-├── tsconfig.json     # TypeScript configuration
-├── mcpize.yaml       # MCPize deployment manifest
-└── Dockerfile        # Container build instructions
+src/
+  index.ts              # Express + MCP server, tool registration, MCPize header parsing
+  tools.ts              # Pure tool functions — business logic only, no MCP dependency
+  bot.ts                # Telegram bot (grammy)
+  lib/
+    airdrop-data.ts     # Static airdrop database — projects, tasks, snapshots
+    db.ts               # Drizzle ORM helpers (users, wallets, tasks, stats)
+    schema.ts           # Drizzle schema — source of truth for DB structure
+    context.ts          # AsyncLocalStorage — passes userId + isPro through async chain
+    sybil.ts            # Sybil risk analysis logic
+
+tests/
+  tools.test.ts         # Unit tests for all tool functions (vitest)
+
+drizzle/
+  0000_past_thing.sql   # Migration 0: initial schema
+  meta/
+    _journal.json       # Drizzle Kit migration index
+    0000_snapshot.json  # Schema snapshot for diff generation
 ```
+
+## MCP Tools (9 total)
+
+| Tool | Purpose |
+|------|---------|
+| `search_airdrops` | Search/filter active airdrops by keyword, chain, difficulty, funding |
+| `get_airdrop_details` | Full project details + step-by-step task list (use for testnet projects) |
+| `track_wallet` | Register wallet for snapshot tracking (use for mainnet projects with snapshot date) |
+| `get_wallet_status` | Check all tracked wallets and deadlines |
+| `get_portfolio` | Full portfolio overview with estimated pending rewards |
+| `check_sybil_risk` | Analyze wallet for Sybil detection risk (0–100 score + recommendations) |
+| `get_upcoming_snapshots` | List upcoming snapshot/deadline dates sorted by urgency |
+| `log_task_completion` | Mark a specific task as done (stored per user in DB) |
+| `get_task_progress` | Show which tasks are done and which are pending for a project |
+
+**Tool routing guidance** (baked into tool descriptions):
+- Testnet projects (Monad, MegaETH) → use `get_airdrop_details` for weekly tasks
+- Mainnet projects with snapshot (StarkNet) → use `track_wallet` + `get_airdrop_details`
+
+## MCPize Header Parsing
+
+MCPize gateway injects these headers per subscriber request:
+
+```typescript
+// src/index.ts
+const userId =
+  (req.headers["x-mcpize-user-id"] as string) ||   // MCPize: always present for logged-in users
+  (req.headers["x-mcpize-user-key"] as string) ||  // MCPize: legacy fallback
+  (req.headers["x-user-key"] as string) ||
+  process.env.DEV_USER_ID ||
+  "local-dev-user";
+
+// X-MCPize-Subscription-ID is only present for paid subscribers
+const subscriptionId = req.headers["x-mcpize-subscription-id"] as string | undefined;
+const isPro = !!subscriptionId || process.env.DEV_IS_PRO === "true";
+```
+
+## AsyncLocalStorage Context
+
+User identity flows through the entire request without threading through every function call:
+
+```typescript
+// src/lib/context.ts
+export const requestContext = new AsyncLocalStorage<{ userId: string; isPro: boolean }>();
+export function getCurrentUserId(): string { ... }
+export function getCurrentUserIsPro(): boolean { ... }
+```
+
+Usage in `index.ts`:
+```typescript
+await requestContext.run({ userId, isPro }, async () => {
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+});
+```
+
+Usage in tools:
+```typescript
+const user_id = getCurrentUserId();
+const isPro = getCurrentUserIsPro();
+```
+
+## Free vs Pro Tier
+
+- **Free**: track 1 project, all read tools unlimited
+- **Pro**: track unlimited projects (`X-MCPize-Subscription-ID` present = paid subscriber)
+
+The `addTrackedWallet` DB helper takes `isPro = false` — when true, skips the free tier limit check.
+
+## Database (Turso + Drizzle ORM)
+
+Connection via `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` env vars.
+
+### Schema (src/lib/schema.ts)
+
+| Table | Purpose |
+|-------|---------|
+| `users` | User accounts, identified by `telegram_id` or `mcpize_key`, tier (free/pro) |
+| `tracked_wallets` | Wallet + project_slug combos tracked per user |
+| `claimed_airdrops` | Historical record of claimed airdrops with USD value |
+| `tool_calls` | Analytics: which tools are called, from which channel |
+| `task_completions` | Per-user per-project task progress |
+
+### Drizzle Migrations Workflow
+
+**To add or modify tables:**
+
+```bash
+# 1. Edit src/lib/schema.ts
+# 2. Generate migration
+npm run db:generate          # creates drizzle/000N_xxxx.sql
+
+# 3. Commit the SQL file + meta/ files
+git add drizzle/
+
+# 4. On startup, migrate() auto-applies pending migrations
+# tracked in __drizzle_migrations table in Turso
+```
+
+**Never edit existing migration files** — add new ones only.
+Migration 0000 has `IF NOT EXISTS` on all statements to allow idempotent runs on existing DBs.
+
+## Key Architectural Decisions
+
+- **No `outputSchema`/`structuredContent`** — removed from all tools. Only `content: [{type: "text", text: JSON.stringify(...)}]` is used. MCPize handles it fine.
+- **Pure functions in tools.ts** — all business logic is testable without MCP dependency. `index.ts` is thin wiring only.
+- **`participation_type` in search results** — tells Claude whether it's a testnet (weekly tasks) or mainnet (snapshot tracking) project, so it recommends the right tools.
+- **Task completion is user-scoped** — `task_completions` links `user_id + project_slug + task_id`, so each MCPize subscriber has their own progress.
+- **Telegram bot shares the same DB** — `bot.ts` uses the same Turso DB, users identified by `telegram_id` with `tg:` prefix.
 
 ## Development Commands
 
 ```bash
 npm install          # Install dependencies
-npm run dev          # Run in development mode with hot reload
-npm test             # Run tests with vitest
-npm run build        # Compile TypeScript to JavaScript
+npm run dev          # Hot reload dev server (port 8080)
+npm test             # Run all unit tests (uses local SQLite)
+npm run build        # Compile TypeScript
+npm run db:generate  # Generate Drizzle migration from schema changes
 npm start            # Run compiled server
 ```
 
-## MCP SDK Usage
+## Local Testing
 
-This server uses `@modelcontextprotocol/sdk` with Streamable HTTP transport.
-
-### Registering Tools
-
-```typescript
-server.registerTool(
-  "tool-name",
-  {
-    title: "Human-readable title",
-    description: "What this tool does",
-    inputSchema: {
-      param: z.string().describe("Parameter description"),
-    },
-    outputSchema: {
-      result: z.string(),
-    },
-  },
-  async ({ param }) => {
-    const output = { result: "computed value" };
-    return {
-      content: [{ type: "text", text: JSON.stringify(output) }],
-      structuredContent: output,
-    };
-  }
-);
-```
-
-### Registering Resources
-
-Resources provide data that fills the context window:
-
-```typescript
-server.registerResource(
-  "resource://data",
-  {
-    name: "Data Resource",
-    description: "Provides static or dynamic data",
-    mimeType: "application/json",
-  },
-  async () => ({
-    contents: [{ uri: "resource://data", text: JSON.stringify(data) }],
-  })
-);
-```
-
-### Registering Prompts
-
-```typescript
-server.registerPrompt(
-  "prompt-name",
-  { description: "Prompt description" },
-  async () => ({
-    messages: [{ role: "user", content: { type: "text", text: "..." } }],
-  })
-);
-```
-
-## MCPize Configuration
-
-The `mcpize.yaml` file controls deployment:
-
-- `runtime`: Server runtime (typescript, python, php)
-- `entry`: Main source file
-- `build.install`: Install command
-- `build.command`: Build command
-- `startCommand.type`: Transport type (http)
-- `configSchema.source`: Where to extract config schema from
-
-## Environment Variables
-
-- `PORT`: Server port (default: 8080, set by MCPize)
-- Add custom env vars in MCPize dashboard
-
-## Testing
-
-Use MCP Inspector to test your server:
+Tests use `file:./data/test.db` — no Turso connection needed. For end-to-end testing via Claude:
 
 ```bash
-npx @anthropic-ai/mcp-inspector
+npm run dev
+# In another terminal:
+npx ngrok http 8080
+# Connect Claude to https://xxxx.ngrok-free.app/mcp
 ```
 
-Connect to `http://localhost:8080/mcp` to test tools and resources.
+For pro tier locally: set `DEV_IS_PRO=true` and `DEV_USER_ID=test-user` in `.env`.
 
-## Deployment
-
-Deploy using MCPize CLI:
+## Deploy
 
 ```bash
+mcpize login                          # Auth (browser)
+mcpize secrets set TURSO_DATABASE_URL ...
+mcpize secrets set TURSO_AUTH_TOKEN ...
 mcpize deploy
 ```
 
 ## TDD Rules — MANDATORY
-
-This project follows strict Test-Driven Development. These rules apply to every change.
 
 ### Order of work — never deviate
 
@@ -152,21 +199,3 @@ This project follows strict Test-Driven Development. These rules apply to every 
 - `index.ts` MCP registration (integration, not unit)
 - `bot.ts` Telegram handlers (too coupled to grammy)
 - `db.ts` internal queries directly (tested via tools)
-
-### Running tests
-
-```bash
-npm test              # Run all tests (uses local SQLite, no network)
-npm run build         # Must pass before deploy
-```
-
-Tests use `file:./data/test.db` (local SQLite) — no Turso connection needed.
-
-## Best Practices
-
-1. **Tools vs Resources**: Use tools for actions, resources for data
-2. **Error Handling**: Always handle errors gracefully in tool handlers
-3. **Structured Output**: Return both `content` and `structuredContent`
-4. **Descriptions**: Write clear descriptions for all tools and parameters
-5. **Validation**: Use Zod schemas for input validation
-6. **Environment Variables**: Use `process.env` for configuration, never hardcode secrets
