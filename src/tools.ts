@@ -29,6 +29,8 @@ export function searchAirdrops(input: SearchAirdropsInput) {
     difficulty: p.difficulty,
     deadline: p.deadline,
     snapshot_date: p.snapshotDate,
+    has_snapshot: !!p.snapshotDate,
+    participation_type: p.snapshotDate ? "mainnet — track wallet for snapshot" : "testnet — do weekly tasks",
     estimated_reward_usd: `$${p.estimatedRewardMin}–$${p.estimatedRewardMax}`,
     status: p.status,
     task_count: p.tasks.length,

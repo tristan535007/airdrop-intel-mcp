@@ -93,7 +93,7 @@ server.registerTool(
   "get_airdrop_details",
   {
     title: "Get Airdrop Details",
-    description: "Get full details for a specific airdrop project including all tasks, requirements, and step-by-step guide.",
+    description: "Get full details for a specific airdrop project including all tasks, requirements, and step-by-step guide. Use this to answer 'what do I need to do this week?' or 'how do I participate?' — it shows concrete weekly tasks for testnet projects and mainnet actions for snapshot-based projects.",
     inputSchema: {
       project_id: z.string().describe("Project slug (e.g. 'monad', 'megaeth', 'aztec'). Get slugs from search_airdrops."),
     },
@@ -111,7 +111,7 @@ server.registerTool(
   "track_wallet",
   {
     title: "Track Wallet",
-    description: "Add a wallet address to your tracker for a specific airdrop project. Free tier allows 1 project.",
+    description: "Register a wallet for a specific airdrop project to track snapshot deadlines and portfolio. Most useful for mainnet projects with a snapshot date (e.g. StarkNet). For testnet projects (Monad, MegaETH) use get_airdrop_details instead to see weekly tasks — testnet participation doesn't require wallet registration. Free tier allows 1 project.",
     inputSchema: {
       address: z.string().describe("Ethereum wallet address (0x...)"),
       project_id: z.string().describe("Project slug to track (e.g. 'monad'). Get from search_airdrops."),
