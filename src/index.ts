@@ -230,15 +230,6 @@ app.post("/mcp", async (req: Request, res: Response) => {
   const method = body?.method || "unknown";
   const params = body?.params;
 
-  if (isDev && method === "initialize") {
-    const relevantHeaders = Object.fromEntries(
-      Object.entries(req.headers).filter(([k]) => k.startsWith("x-mcpize") || k.startsWith("x-user") || k === "authorization")
-    );
-    if (Object.keys(relevantHeaders).length > 0) {
-      console.log(chalk.gray(`[headers] ${JSON.stringify(relevantHeaders)}`));
-    }
-  }
-
   if (method === "tools/call") {
     const toolName = params?.name || "unknown";
     logRequest(`tools/call ${chalk.bold(toolName)}`, params?.arguments);
