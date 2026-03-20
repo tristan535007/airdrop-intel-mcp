@@ -56,11 +56,11 @@ export async function getOrCreateUser(identifier: string) {
   return getOrCreateUserByMcpizeKey(identifier);
 }
 
-export async function getUserById(userId: number) {
+export async function getUserById(userId: string) {
   return db.select().from(users).where(eq(users.id, userId)).get();
 }
 
-export async function upgradeToPro(userId: number) {
+export async function upgradeToPro(userId: string) {
   await db.update(users).set({ tier: "pro" }).where(eq(users.id, userId));
 }
 

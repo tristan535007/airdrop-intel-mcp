@@ -187,7 +187,7 @@ server.registerTool(
     inputSchema: {
       project_slug: z.string().describe("Project slug (e.g. 'monad', 'starknet')."),
       task_id: z.string().describe("Short task identifier (e.g. 'faucet-claim', 'ambient-swap', 'discord-join'). Use kebab-case."),
-      notes: z.string().optional().describe("Optional note about how the task was completed"),
+      notes: z.string().optional().describe("How the task was completed. For browser automation always fill this: use format 'automated | url:<page-url>' or 'automated | tx:<tx-hash> | url:<page-url>' if a transaction was made. For manual completion leave empty or write a short human note."),
     },
   },
   async ({ project_slug, task_id, notes }) => {
