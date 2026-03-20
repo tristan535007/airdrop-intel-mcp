@@ -2,7 +2,7 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { eq, and, count, countDistinct, sum, sql } from "drizzle-orm";
-import { users, tracked_wallets, claimed_airdrops, tool_calls, task_completions } from "./schema.js";
+import { users, tracked_wallets, claimed_airdrops, tool_calls, task_completions, subscribed_projects } from "./schema.js";
 
 export type { User, TrackedWallet } from "./schema.js";
 
@@ -93,16 +93,30 @@ export async function getTrackedWallets(userId: number, projectSlug?: string) {
   return db.select().from(tracked_wallets).where(eq(tracked_wallets.user_id, userId)).all();
 }
 
+export async function subscribeToProject(userId: number, projectSlug: string): Promise<void> {
+  await db.insert(subscribed_projects).values({ user_id: userId, project_slug: projectSlug }).onConflictDoNothing();
+}
+
+export async function unsubscribeFromProject(userId: number, projectSlug: string): Promise<void> {
+  await db.delete(subscribed_projects).where(
+    and(eq(subscribed_projects.user_id, userId), eq(subscribed_projects.project_slug, projectSlug))
+  );
+}
+
+export async function getSubscribedProjects(userId: number) {
+  return db.select().from(subscribed_projects).where(eq(subscribed_projects.user_id, userId)).all();
+}
+
 export async function addTrackedWallet(userId: number, walletAddress: string, projectSlug: string, isPro = false): Promise<{ success: boolean; message: string }> {
   const user = await getUserById(userId);
   if (!user) return { success: false, message: "User not found" };
 
   if (!isPro && user.tier === "free") {
-    const [{ value: projectCount }] = await db.select({ value: countDistinct(tracked_wallets.project_slug) })
-      .from(tracked_wallets).where(eq(tracked_wallets.user_id, userId));
-    const existing = await db.select().from(tracked_wallets)
-      .where(and(eq(tracked_wallets.user_id, userId), eq(tracked_wallets.project_slug, projectSlug))).get();
-    if (projectCount >= 1 && !existing) {
+    const [{ value: subCount }] = await db.select({ value: count() })
+      .from(subscribed_projects).where(eq(subscribed_projects.user_id, userId));
+    const alreadySubscribed = await db.select().from(subscribed_projects)
+      .where(and(eq(subscribed_projects.user_id, userId), eq(subscribed_projects.project_slug, projectSlug))).get();
+    if (subCount >= 1 && !alreadySubscribed) {
       return {
         success: false,
         message: "FREE_TIER_LIMIT: You can track 1 project on the free plan. Upgrade to Pro ($15/mo) to track unlimited projects.",
@@ -116,6 +130,7 @@ export async function addTrackedWallet(userId: number, walletAddress: string, pr
       wallet_address: walletAddress.toLowerCase(),
       project_slug: projectSlug,
     }).onConflictDoNothing();
+    await subscribeToProject(userId, projectSlug);
     return { success: true, message: "Wallet added to tracker" };
   } catch {
     return { success: false, message: "Failed to add wallet" };

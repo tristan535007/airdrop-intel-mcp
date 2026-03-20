@@ -35,6 +35,13 @@ export const tool_calls = sqliteTable("tool_calls", {
   called_at: text("called_at").notNull().default(sql`(datetime('now'))`),
 });
 
+export const subscribed_projects = sqliteTable("subscribed_projects", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  user_id: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  project_slug: text("project_slug").notNull(),
+  joined_at: text("joined_at").notNull().default(sql`(datetime('now'))`),
+});
+
 export const task_completions = sqliteTable("task_completions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   user_id: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

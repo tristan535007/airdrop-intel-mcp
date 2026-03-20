@@ -4,7 +4,7 @@
  */
 
 import { searchProjects, getProjectBySlug, getUpcomingSnapshots } from "./lib/airdrop-data.js";
-import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser, markTaskComplete, getCompletedTasks, addClaimedAirdrop, removeAllWalletsForProject } from "./lib/db.js";
+import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser, markTaskComplete, getCompletedTasks, addClaimedAirdrop, removeAllWalletsForProject, subscribeToProject, unsubscribeFromProject, getSubscribedProjects } from "./lib/db.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 
 // ============================================================================
@@ -149,10 +149,11 @@ export async function getWalletStatus(userId: string, walletAddress?: string) {
 
 export async function getPortfolio(userId: string) {
   const user = await getOrCreateUser(userId);
+  const subscribed = await getSubscribedProjects(user.id);
   const tracked = await getTrackedWallets(user.id);
   const stats = await getUserStats(user.id);
 
-  const byProject = tracked.reduce<Record<string, string[]>>((acc, t) => {
+  const walletsByProject = tracked.reduce<Record<string, string[]>>((acc, t) => {
     if (!acc[t.project_slug]) acc[t.project_slug] = [];
     acc[t.project_slug].push(t.wallet_address);
     return acc;
@@ -161,32 +162,38 @@ export async function getPortfolio(userId: string) {
   let pendingMin = 0;
   let pendingMax = 0;
 
-  const projects = Object.entries(byProject).map(([slug, wallets]) => {
+  const projects = await Promise.all(subscribed.map(async (sub) => {
+    const slug = sub.project_slug;
     const project = getProjectBySlug(slug);
+    const wallets = walletsByProject[slug] || [];
+    const completedTasks = await getCompletedTasks(user.id, slug);
     const deadlineStr = project?.snapshotDate || project?.deadline || null;
     let daysUntil: number | null = null;
     if (deadlineStr) {
       daysUntil = Math.floor((new Date(deadlineStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     }
     if (project) {
-      pendingMin += project.estimatedRewardMin * wallets.length;
-      pendingMax += project.estimatedRewardMax * wallets.length;
+      const walletCount = Math.max(wallets.length, 1);
+      pendingMin += project.estimatedRewardMin * walletCount;
+      pendingMax += project.estimatedRewardMax * walletCount;
     }
     return {
       slug,
       name: project?.name || slug,
       wallets,
+      tasks_completed: completedTasks.length,
+      tasks_total: project?.tasks.length ?? 0,
       deadline: deadlineStr,
       days_until_deadline: daysUntil,
       estimated_reward_usd: project ? `$${project.estimatedRewardMin}–$${project.estimatedRewardMax}` : "unknown",
       difficulty: project?.difficulty || "unknown",
     };
-  });
+  }));
 
   return {
     user_id: userId,
     tier: user.tier,
-    total_projects: stats.totalProjects,
+    total_projects: subscribed.length,
     total_wallets: stats.totalWallets,
     claimed_airdrops: stats.claimedAirdrops,
     estimated_pending_usd: `$${pendingMin}–$${pendingMax}`,
@@ -230,6 +237,7 @@ export async function logTaskCompletion(projectId: string, taskId: string, userI
   }
   const user = await getOrCreateUser(userId);
   await markTaskComplete(user.id, projectId, taskId, notes);
+  await subscribeToProject(user.id, projectId);
   return {
     success: true,
     project_slug: projectId,
@@ -285,14 +293,13 @@ export async function untrackProject(projectId: string, userId: string) {
   }
   const user = await getOrCreateUser(userId);
   const removed = await removeAllWalletsForProject(user.id, projectId);
+  await unsubscribeFromProject(user.id, projectId);
   return {
     success: true,
     project_slug: projectId,
     project_name: project.name,
     wallets_removed: removed,
-    message: removed > 0
-      ? `Stopped tracking ${project.name}. ${removed} wallet(s) removed. Your free tier slot is now available.`
-      : `No wallets were tracked for ${project.name}.`,
+    message: `Stopped tracking ${project.name}. Your free tier slot is now available.`,
   };
 }
 

@@ -170,24 +170,77 @@ describe("getWalletStatus", () => {
 // ============================================================================
 
 describe("untrackProject", () => {
-  it("removes all wallets for a project", async () => {
+  it("removes subscription for a mainnet project with wallet", async () => {
     const user = `test-user-untrack2-${Date.now()}`;
-    await trackWallet(TEST_WALLET, "monad", user);
-    const result = await untrackProject("monad", user);
+    await trackWallet(TEST_WALLET, "starknet", user);
+    const result = await untrackProject("starknet", user);
     expect(result.success).toBe(true);
-    expect(result.project_slug).toBe("monad");
-    expect(result.wallets_removed).toBeGreaterThan(0);
+    expect(result.project_slug).toBe("starknet");
+    // portfolio should no longer show starknet
+    const portfolio = await getPortfolio(user);
+    expect(portfolio.projects.find((p: { slug: string }) => p.slug === "starknet")).toBeUndefined();
   });
 
-  it("returns success even if no wallets were tracked", async () => {
-    const result = await untrackProject("monad", `fresh-user-${Date.now()}`);
+  it("removes subscription for a testnet project (no wallet)", async () => {
+    const user = `test-user-untrack3-${Date.now()}`;
+    await logTaskCompletion("monad", "monad-faucet", user); // auto-subscribes
+    const result = await untrackProject("monad", user);
     expect(result.success).toBe(true);
-    expect(result.wallets_removed).toBe(0);
+    const portfolio = await getPortfolio(user);
+    expect(portfolio.projects.find((p: { slug: string }) => p.slug === "monad")).toBeUndefined();
   });
 
   it("returns error for unknown project", async () => {
     const result = await untrackProject("unknown-xyz", TEST_USER);
     expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// subscribed_projects — core subscription behaviour
+// ============================================================================
+
+describe("subscription behaviour", () => {
+  it("logTaskCompletion auto-subscribes user and project appears in portfolio", async () => {
+    const user = `test-sub-testnet-${Date.now()}`;
+    await logTaskCompletion("monad", "monad-faucet", user);
+    const portfolio = await getPortfolio(user);
+    expect(portfolio.projects.find((p: { slug: string }) => p.slug === "monad")).toBeDefined();
+  });
+
+  it("trackWallet auto-subscribes user and project appears in portfolio", async () => {
+    const user = `test-sub-mainnet-${Date.now()}`;
+    await trackWallet(TEST_WALLET, "starknet", user);
+    const portfolio = await getPortfolio(user);
+    expect(portfolio.projects.find((p: { slug: string }) => p.slug === "starknet")).toBeDefined();
+  });
+
+  it("testnet project in portfolio shows tasks_completed even without wallet", async () => {
+    const user = `test-sub-tasks-${Date.now()}`;
+    await logTaskCompletion("monad", "monad-faucet", user);
+    await logTaskCompletion("monad", "monad-txns", user);
+    const portfolio = await getPortfolio(user);
+    const monad = portfolio.projects.find((p: { slug: string }) => p.slug === "monad");
+    expect(monad).toBeDefined();
+    expect(monad.tasks_completed).toBe(2);
+  });
+
+  it("free tier blocks second project subscription via task completion", async () => {
+    const user = `test-sub-freetier-${Date.now()}`;
+    // Subscribe to monad via task
+    await logTaskCompletion("monad", "monad-faucet", user);
+    // Try to subscribe to second project via track_wallet
+    const r = await trackWallet(TEST_WALLET, "starknet", user);
+    expect(r.success).toBe(false);
+    expect(r.upgrade_required).toBe(true);
+  });
+
+  it("after untrack, free tier slot freed and new project can be added", async () => {
+    const user = `test-sub-swap-${Date.now()}`;
+    await logTaskCompletion("monad", "monad-faucet", user);
+    await untrackProject("monad", user);
+    const r = await trackWallet(TEST_WALLET, "starknet", user);
+    expect(r.success).toBe(true);
   });
 });
 
