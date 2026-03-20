@@ -15,6 +15,7 @@ import {
   logTaskCompletion,
   getTaskProgress,
   logClaimedAirdrop,
+  untrackProject,
 } from "./tools.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 import { initDb } from "./lib/db.js";
@@ -250,6 +251,25 @@ server.registerTool(
   async ({ project_id }) => {
     const user_id = getCurrentUserId();
     const result = await getTaskProgress(project_id, user_id);
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
+// ---- untrack_project ----
+server.registerTool(
+  "untrack_project",
+  {
+    title: "Untrack Project",
+    description: "Stop tracking a project and remove all its wallets. Frees up the free tier slot so you can track a different project. Use when the user changes their mind or wants to switch projects.",
+    inputSchema: {
+      project_id: z.string().describe("Project slug to stop tracking (e.g. 'starknet'). Get from search_airdrops or get_wallet_status."),
+    },
+  },
+  async ({ project_id }) => {
+    const user_id = getCurrentUserId();
+    const result = await untrackProject(project_id, user_id);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };

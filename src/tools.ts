@@ -4,7 +4,7 @@
  */
 
 import { searchProjects, getProjectBySlug, getUpcomingSnapshots } from "./lib/airdrop-data.js";
-import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser, markTaskComplete, getCompletedTasks, addClaimedAirdrop } from "./lib/db.js";
+import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser, markTaskComplete, getCompletedTasks, addClaimedAirdrop, removeAllWalletsForProject } from "./lib/db.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 
 // ============================================================================
@@ -271,6 +271,28 @@ export async function getTaskProgress(projectId: string, userId: string) {
     completed_count: completed.length,
     progress_pct: Math.round((completed.length / tasks.length) * 100),
     tasks,
+  };
+}
+
+// ============================================================================
+// Tool: untrack_project
+// ============================================================================
+
+export async function untrackProject(projectId: string, userId: string) {
+  const project = getProjectBySlug(projectId);
+  if (!project) {
+    return { success: false, message: `Project "${projectId}" not found. Use search_airdrops to find valid project IDs.` };
+  }
+  const user = await getOrCreateUser(userId);
+  const removed = await removeAllWalletsForProject(user.id, projectId);
+  return {
+    success: true,
+    project_slug: projectId,
+    project_name: project.name,
+    wallets_removed: removed,
+    message: removed > 0
+      ? `Stopped tracking ${project.name}. ${removed} wallet(s) removed. Your free tier slot is now available.`
+      : `No wallets were tracked for ${project.name}.`,
   };
 }
 

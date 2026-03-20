@@ -133,6 +133,13 @@ export async function removeTrackedWallet(userId: number, walletAddress: string,
   return (result.rowsAffected ?? 0) > 0;
 }
 
+export async function removeAllWalletsForProject(userId: number, projectSlug: string): Promise<number> {
+  const result = await db.delete(tracked_wallets).where(
+    and(eq(tracked_wallets.user_id, userId), eq(tracked_wallets.project_slug, projectSlug))
+  );
+  return result.rowsAffected ?? 0;
+}
+
 // ============================================================================
 // Stats helpers
 // ============================================================================

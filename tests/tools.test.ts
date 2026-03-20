@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initDb } from "../src/lib/db.js";
-import { searchAirdrops, getAirdropDetails, trackWallet, getWalletStatus, getPortfolio, getUpcomingSnapshotsList, logTaskCompletion, getTaskProgress, logClaimedAirdrop } from "../src/tools.js";
+import { searchAirdrops, getAirdropDetails, trackWallet, untrackProject, getWalletStatus, getPortfolio, getUpcomingSnapshotsList, logTaskCompletion, getTaskProgress, logClaimedAirdrop } from "../src/tools.js";
 
 beforeAll(async () => {
   await initDb();
@@ -122,6 +122,20 @@ describe("trackWallet", () => {
     expect(r2.message).toContain("FREE_TIER_LIMIT");
   });
 
+  it("after untrack, free tier slot is freed up", async () => {
+    const user3 = `test-user-untrack-${Date.now()}`;
+    await trackWallet(TEST_WALLET, "monad", user3);
+    // Second project blocked
+    const blocked = await trackWallet(TEST_WALLET, "megaeth", user3);
+    expect(blocked.success).toBe(false);
+    // Untrack monad
+    const removed = await untrackProject("monad", user3);
+    expect(removed.success).toBe(true);
+    // Now can add megaeth
+    const r2 = await trackWallet(TEST_WALLET, "megaeth", user3);
+    expect(r2.success).toBe(true);
+  });
+
   it("pro user can track multiple projects without limit", async () => {
     const proUser = `test-user-pro-${Date.now()}`;
     const r1 = await trackWallet(TEST_WALLET, "monad", proUser, true);
@@ -148,6 +162,32 @@ describe("getWalletStatus", () => {
     const result = await getWalletStatus(`brand-new-user-${Date.now()}`);
     expect(result.tracked_count).toBe(0);
     expect(result.statuses).toHaveLength(0);
+  });
+});
+
+// ============================================================================
+// untrack_project
+// ============================================================================
+
+describe("untrackProject", () => {
+  it("removes all wallets for a project", async () => {
+    const user = `test-user-untrack2-${Date.now()}`;
+    await trackWallet(TEST_WALLET, "monad", user);
+    const result = await untrackProject("monad", user);
+    expect(result.success).toBe(true);
+    expect(result.project_slug).toBe("monad");
+    expect(result.wallets_removed).toBeGreaterThan(0);
+  });
+
+  it("returns success even if no wallets were tracked", async () => {
+    const result = await untrackProject("monad", `fresh-user-${Date.now()}`);
+    expect(result.success).toBe(true);
+    expect(result.wallets_removed).toBe(0);
+  });
+
+  it("returns error for unknown project", async () => {
+    const result = await untrackProject("unknown-xyz", TEST_USER);
+    expect(result.success).toBe(false);
   });
 });
 
