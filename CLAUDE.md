@@ -20,16 +20,20 @@ src/
     db.ts               # Drizzle ORM helpers (users, wallets, tasks, stats)
     schema.ts           # Drizzle schema — source of truth for DB structure
     context.ts          # AsyncLocalStorage — passes userId + isPro through async chain
-    sybil.ts            # Sybil risk analysis logic
+    sybil.ts            # Sybil risk analysis — pure computation on top of api-client
+    api-client.ts       # Etherscan + DeFiLlama API wrappers with caching
 
 tests/
   tools.test.ts         # Unit tests for all tool functions (vitest)
+  sybil.test.ts         # Unit tests for sybil logic (mocks api-client)
 
 drizzle/
   0000_past_thing.sql   # Migration 0: initial schema
+  0001_lethal_reavers.sql
+  0002_nanoid_pks.sql   # Migration 2: text nanoid PKs instead of integer autoincrement
+  0003_project_meta.sql # Migration 3: project_name + deadline on subscribed_projects
   meta/
     _journal.json       # Drizzle Kit migration index
-    0000_snapshot.json  # Schema snapshot for diff generation
 ```
 
 ## MCP Tools (9 total)
@@ -116,7 +120,12 @@ const isPro = getCurrentUserIsPro();
 - **Free**: track 1 project, all read tools unlimited
 - **Pro**: track unlimited projects (`X-MCPize-Subscription-ID` present = paid subscriber)
 
-The `addTrackedWallet` DB helper takes `isPro = false` — when true, skips the free tier limit check.
+Free tier is enforced in three places:
+- `subscribeToAirdrop` — blocks subscribing to 2nd project
+- `addTrackedWallet` (db.ts) — blocks adding wallet for 2nd project
+- `logTaskCompletion` — blocks auto-subscribe for 2nd project (task is still logged)
+
+All three receive `isPro` from `getCurrentUserIsPro()` in `index.ts`.
 
 ## Database (Turso + Drizzle ORM)
 
@@ -127,10 +136,11 @@ Connection via `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` env vars.
 | Table | Purpose |
 |-------|---------|
 | `users` | User accounts, identified by `telegram_id` or `mcpize_key`, tier (free/pro) |
-| `tracked_wallets` | Wallet + project_slug combos tracked per user |
-| `claimed_airdrops` | Historical record of claimed airdrops with USD value |
+| `subscribed_projects` | Projects user is tracking — stores `project_name`, `deadline`, `joined_at` |
+| `tracked_wallets` | Wallet + project_slug combos for mainnet/snapshot tracking |
+| `task_completions` | Per-user per-project completed task IDs (free-form kebab-case strings) |
+| `claimed_airdrops` | Historical record of claimed airdrops with token amount and USD value |
 | `tool_calls` | Analytics: which tools are called, from which channel |
-| `task_completions` | Per-user per-project task progress |
 
 ### Drizzle Migrations Workflow
 
@@ -158,6 +168,8 @@ Migration 0000 has `IF NOT EXISTS` on all statements to allow idempotent runs on
 - **Pure functions in tools.ts** — all business logic is testable without MCP dependency. `index.ts` is thin wiring only.
 - **nanoid PKs** — all table PKs are `text` with `$defaultFn(() => nanoid())`. No integer autoincrement.
 - **Task IDs are free-form** — `task_completions` stores whatever string Claude decides (e.g. `faucet-claim`, `ambient-swap`). No validation against a predefined list.
+- **projectSlug is always normalized** — `.toLowerCase()` applied at the start of every tool function in `tools.ts`. Never trust raw input.
+- **untrackProject cleans everything** — removes `tracked_wallets`, `task_completions`, and `subscribed_projects` for the slug. Re-subscribing starts fresh.
 - **Task completion is user-scoped** — `task_completions` links `user_id + project_slug + task_id`, so each subscriber has their own progress.
 - **Telegram bot shares the same DB** — `bot.ts` uses the same Turso DB, users identified by `telegram_id` with `tg:` prefix.
 
@@ -216,6 +228,7 @@ mcpize deploy
 | What | Where | Required |
 |------|-------|----------|
 | Every tool function | `tests/tools.test.ts` | Yes |
+| Sybil risk logic | `tests/sybil.test.ts` (mocks api-client) | Yes |
 | Happy path | at least 1 test per tool | Yes |
 | Error/edge cases | invalid input, not found, tier limits | Yes |
 | Async functions | must use `async/await` in tests | Yes |
@@ -225,3 +238,4 @@ mcpize deploy
 - `index.ts` MCP registration (integration, not unit)
 - `bot.ts` Telegram handlers (too coupled to grammy)
 - `db.ts` internal queries directly (tested via tools)
+- `api-client.ts` external API calls (tested indirectly via sybil mocks)
