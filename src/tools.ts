@@ -4,7 +4,7 @@
  */
 
 import { searchProjects, getProjectBySlug, getUpcomingSnapshots } from "./lib/airdrop-data.js";
-import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser } from "./lib/db.js";
+import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser, markTaskComplete, getCompletedTasks } from "./lib/db.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 
 // ============================================================================
@@ -213,6 +213,65 @@ export function getUpcomingSnapshotsList(days: number = 90) {
       estimated_reward_usd: `$${p.estimatedRewardMin}–$${p.estimatedRewardMax}`,
     };
   });
+}
+
+// ============================================================================
+// Tool: log_task_completion
+// ============================================================================
+
+export async function logTaskCompletion(projectId: string, taskId: string, userId: string, notes?: string) {
+  const project = getProjectBySlug(projectId);
+  if (!project) {
+    return { success: false, message: `Project "${projectId}" not found. Use search_airdrops to find valid project IDs.` };
+  }
+  const task = project.tasks.find((t) => t.id === taskId);
+  if (!task) {
+    return { success: false, message: `Task "${taskId}" not found in project "${projectId}". Use get_airdrop_details to see valid task IDs.` };
+  }
+  const user = await getOrCreateUser(userId);
+  await markTaskComplete(user.id, projectId, taskId, notes);
+  return {
+    success: true,
+    project_slug: projectId,
+    project_name: project.name,
+    task_id: taskId,
+    task_title: task.title,
+    message: `Task "${task.title}" marked as completed.`,
+  };
+}
+
+// ============================================================================
+// Tool: get_task_progress
+// ============================================================================
+
+export async function getTaskProgress(projectId: string, userId: string) {
+  const project = getProjectBySlug(projectId);
+  if (!project) {
+    return { success: false, message: `Project "${projectId}" not found.` };
+  }
+  const user = await getOrCreateUser(userId);
+  const completed = await getCompletedTasks(user.id, projectId);
+  const completedSet = new Set(completed);
+
+  const tasks = project.tasks.map((t) => ({
+    task_id: t.id,
+    title: t.title,
+    type: t.type,
+    automated: t.automated,
+    completed: completedSet.has(t.id),
+    hint: t.automated
+      ? "Can be done manually — follow the steps in get_airdrop_details"
+      : "Manual step required — see links in get_airdrop_details",
+  }));
+
+  return {
+    project_name: project.name,
+    project_slug: projectId,
+    total_tasks: tasks.length,
+    completed_count: completed.length,
+    progress_pct: Math.round((completed.length / tasks.length) * 100),
+    tasks,
+  };
 }
 
 // Re-export for use in index.ts

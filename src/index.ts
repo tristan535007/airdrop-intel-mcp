@@ -12,6 +12,8 @@ import {
   getUpcomingSnapshotsList,
   getUserStats,
   getOrCreateUserByMcpizeKey,
+  logTaskCompletion,
+  getTaskProgress,
 } from "./tools.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 import { initDb } from "./lib/db.js";
@@ -209,6 +211,46 @@ server.registerTool(
     const output = { snapshots, total: snapshots.length };
     return {
       content: [{ type: "text", text: JSON.stringify(output, null, 2) }],
+    };
+  }
+);
+
+// ---- log_task_completion ----
+server.registerTool(
+  "log_task_completion",
+  {
+    title: "Log Task Completion",
+    description: "Mark a specific airdrop task as completed. Use this after the user confirms they've done a step — like claiming faucet tokens, making transactions, joining Discord, etc. Always log completions so the user can track their progress. Get task_id from get_airdrop_details.",
+    inputSchema: {
+      project_id: z.string().describe("Project slug (e.g. 'monad', 'starknet'). Get from search_airdrops."),
+      task_id: z.string().describe("Task ID to mark as done (e.g. 'monad-faucet', 'starknet-bridge'). Get from get_airdrop_details."),
+      notes: z.string().optional().describe("Optional note about how it was done or any relevant details"),
+    },
+  },
+  async ({ project_id, task_id, notes }) => {
+    const user_id = getCurrentUserId();
+    const result = await logTaskCompletion(project_id, task_id, user_id, notes);
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
+// ---- get_task_progress ----
+server.registerTool(
+  "get_task_progress",
+  {
+    title: "Get Task Progress",
+    description: "Show the user's progress on all tasks for a specific airdrop project — which steps are done and which are still pending. Use this when the user asks 'what have I done?', 'what's left?', or 'show my progress on Monad'.",
+    inputSchema: {
+      project_id: z.string().describe("Project slug (e.g. 'monad', 'starknet'). Get from search_airdrops."),
+    },
+  },
+  async ({ project_id }) => {
+    const user_id = getCurrentUserId();
+    const result = await getTaskProgress(project_id, user_id);
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
   }
 );

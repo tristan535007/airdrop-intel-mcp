@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initDb } from "../src/lib/db.js";
-import { searchAirdrops, getAirdropDetails, trackWallet, getWalletStatus, getPortfolio, getUpcomingSnapshotsList } from "../src/tools.js";
+import { searchAirdrops, getAirdropDetails, trackWallet, getWalletStatus, getPortfolio, getUpcomingSnapshotsList, logTaskCompletion, getTaskProgress } from "../src/tools.js";
 
 beforeAll(async () => {
   await initDb();
@@ -195,5 +195,61 @@ describe("getUpcomingSnapshotsList", () => {
       else if (s.days_remaining < 14) expect(s.urgency).toBe("soon");
       else expect(s.urgency).toBe("ok");
     });
+  });
+});
+
+// ============================================================================
+// log_task_completion + get_task_progress
+// ============================================================================
+
+const PROGRESS_USER = `test-user-progress-${Date.now()}`;
+
+describe("logTaskCompletion", () => {
+  it("marks a known task as completed", async () => {
+    const result = await logTaskCompletion("monad", "monad-faucet", PROGRESS_USER);
+    expect(result.success).toBe(true);
+    expect(result.task_id).toBe("monad-faucet");
+    expect(result.project_slug).toBe("monad");
+  });
+
+  it("returns error for unknown project", async () => {
+    const result = await logTaskCompletion("unknown-xyz", "some-task", PROGRESS_USER);
+    expect(result.success).toBe(false);
+  });
+
+  it("returns error for unknown task_id", async () => {
+    const result = await logTaskCompletion("monad", "nonexistent-task", PROGRESS_USER);
+    expect(result.success).toBe(false);
+  });
+
+  it("marking same task twice is idempotent", async () => {
+    await logTaskCompletion("monad", "monad-txns", PROGRESS_USER);
+    const result = await logTaskCompletion("monad", "monad-txns", PROGRESS_USER);
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("getTaskProgress", () => {
+  it("shows completed and pending tasks for a project", async () => {
+    const result = await getTaskProgress("monad", PROGRESS_USER);
+    expect(result.project_name).toBe("Monad");
+    expect(result.total_tasks).toBeGreaterThan(0);
+    expect(result.completed_count).toBeGreaterThanOrEqual(2); // faucet + txns
+    expect(result.tasks).toBeDefined();
+    result.tasks.forEach((t: { task_id: string; completed: boolean }) => {
+      expect(t).toHaveProperty("task_id");
+      expect(t).toHaveProperty("completed");
+    });
+  });
+
+  it("returns empty progress for new user", async () => {
+    const result = await getTaskProgress("monad", `brand-new-${Date.now()}`);
+    expect(result.completed_count).toBe(0);
+    expect(result.tasks.every((t: { completed: boolean }) => !t.completed)).toBe(true);
+  });
+
+  it("returns error for unknown project", async () => {
+    const result = await getTaskProgress("unknown-xyz", PROGRESS_USER);
+    expect(result.success).toBe(false);
   });
 });

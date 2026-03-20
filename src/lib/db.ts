@@ -1,7 +1,7 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { eq, and, count, countDistinct, sum, sql } from "drizzle-orm";
-import { users, tracked_wallets, claimed_airdrops, tool_calls } from "./schema.js";
+import { users, tracked_wallets, claimed_airdrops, tool_calls, task_completions } from "./schema.js";
 
 export type { User, TrackedWallet } from "./schema.js";
 
@@ -55,6 +55,16 @@ export async function initDb() {
       channel TEXT NOT NULL DEFAULT 'mcp',
       tool_name TEXT NOT NULL,
       called_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS task_completions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      project_slug TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      completed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      notes TEXT,
+      UNIQUE(user_id, project_slug, task_id)
     );
   `);
 }
@@ -200,6 +210,22 @@ export async function getUserStats(userId: number): Promise<UserStats> {
 
 export async function logToolCall(userId: number | null, toolName: string, channel: "mcp" | "telegram" = "mcp") {
   await db.insert(tool_calls).values({ user_id: userId, tool_name: toolName, channel });
+}
+
+// ============================================================================
+// Task completion helpers
+// ============================================================================
+
+export async function markTaskComplete(userId: number, projectSlug: string, taskId: string, notes?: string) {
+  await db.insert(task_completions).values({ user_id: userId, project_slug: projectSlug, task_id: taskId, notes: notes ?? null })
+    .onConflictDoNothing();
+}
+
+export async function getCompletedTasks(userId: number, projectSlug: string): Promise<string[]> {
+  const rows = await db.select({ task_id: task_completions.task_id })
+    .from(task_completions)
+    .where(and(eq(task_completions.user_id, userId), eq(task_completions.project_slug, projectSlug)));
+  return rows.map((r) => r.task_id);
 }
 
 export default db;
