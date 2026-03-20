@@ -2,6 +2,13 @@
 
 Crypto airdrop tracker and assistant. Dual distribution: MCP server (MCPize) + Telegram bot.
 
+## Architecture
+
+**Claude = airdrop discovery engine** (web search for current projects, tasks, deadlines)
+**MCP = personal data store** (subscriptions, wallets, task progress, claimed rewards)
+
+There is no hardcoded airdrop data. Claude finds airdrops dynamically via web search and stores only user-specific state in the DB.
+
 ## Project Structure
 
 ```
@@ -10,7 +17,6 @@ src/
   tools.ts              # Pure tool functions — business logic only, no MCP dependency
   bot.ts                # Telegram bot (grammy)
   lib/
-    airdrop-data.ts     # Static airdrop database — projects, tasks, snapshots
     db.ts               # Drizzle ORM helpers (users, wallets, tasks, stats)
     schema.ts           # Drizzle schema — source of truth for DB structure
     context.ts          # AsyncLocalStorage — passes userId + isPro through async chain
@@ -30,19 +36,37 @@ drizzle/
 
 | Tool | Purpose |
 |------|---------|
-| `search_airdrops` | Search/filter active airdrops by keyword, chain, difficulty, funding |
-| `get_airdrop_details` | Full project details + step-by-step task list (use for testnet projects) |
-| `track_wallet` | Register wallet for snapshot tracking (use for mainnet projects with snapshot date) |
+| `subscribe_to_project` | Subscribe user to a project after they agree to participate |
+| `track_wallet` | Register wallet for snapshot tracking (mainnet projects) |
 | `get_wallet_status` | Check all tracked wallets and deadlines |
-| `get_portfolio` | Full portfolio overview with estimated pending rewards |
+| `get_portfolio` | Full portfolio overview with task progress |
 | `check_sybil_risk` | Analyze wallet for Sybil detection risk (0–100 score + recommendations) |
-| `get_upcoming_snapshots` | List upcoming snapshot/deadline dates sorted by urgency |
 | `log_task_completion` | Mark a specific task as done (stored per user in DB) |
-| `get_task_progress` | Show which tasks are done and which are pending for a project |
+| `get_task_progress` | Show which tasks are done for a project |
+| `untrack_project` | Remove project and free up tier slot |
+| `log_claimed_airdrop` | Record received tokens and USD value |
 
-**Tool routing guidance** (baked into tool descriptions):
-- Testnet projects (Monad, MegaETH) → use `get_airdrop_details` for weekly tasks
-- Mainnet projects with snapshot (StarkNet) → use `track_wallet` + `get_airdrop_details`
+## Browser Automation (claude-in-chrome)
+
+Claude can complete safe airdrop tasks automatically via browser tools. Rules baked into tool descriptions:
+
+**Safe to automate (offer to user):**
+- Testnet faucet claims
+- Testnet DEX swaps / bridge transactions
+- Visiting project pages, filling forms (no wallet signing)
+
+**Never automate:**
+- Mainnet transactions with real funds
+- Wallet connect / signing prompts
+- Social actions (Twitter, Discord) without per-step confirmation
+- Anything involving private keys or seed phrases
+
+**Flow:**
+1. Claude finds airdrop tasks via web search
+2. After `subscribe_to_project` — Claude presents task list and offers to automate safe ones
+3. User confirms → Claude uses `claude-in-chrome` tools one task at a time
+4. After each task → Claude calls `log_task_completion` immediately
+5. After all tasks → summary shown to user
 
 ## MCPize Header Parsing
 
@@ -129,10 +153,12 @@ Migration 0000 has `IF NOT EXISTS` on all statements to allow idempotent runs on
 
 ## Key Architectural Decisions
 
-- **No `outputSchema`/`structuredContent`** — removed from all tools. Only `content: [{type: "text", text: JSON.stringify(...)}]` is used. MCPize handles it fine.
+- **No hardcoded airdrop data** — Claude discovers projects via web search. MCP only stores user state.
+- **No `outputSchema`/`structuredContent`** — only `content: [{type: "text", text: JSON.stringify(...)}]`. MCPize handles it fine.
 - **Pure functions in tools.ts** — all business logic is testable without MCP dependency. `index.ts` is thin wiring only.
-- **`participation_type` in search results** — tells Claude whether it's a testnet (weekly tasks) or mainnet (snapshot tracking) project, so it recommends the right tools.
-- **Task completion is user-scoped** — `task_completions` links `user_id + project_slug + task_id`, so each MCPize subscriber has their own progress.
+- **nanoid PKs** — all table PKs are `text` with `$defaultFn(() => nanoid())`. No integer autoincrement.
+- **Task IDs are free-form** — `task_completions` stores whatever string Claude decides (e.g. `faucet-claim`, `ambient-swap`). No validation against a predefined list.
+- **Task completion is user-scoped** — `task_completions` links `user_id + project_slug + task_id`, so each subscriber has their own progress.
 - **Telegram bot shares the same DB** — `bot.ts` uses the same Turso DB, users identified by `telegram_id` with `tg:` prefix.
 
 ## Development Commands

@@ -73,7 +73,7 @@ server.registerTool(
   "subscribe_to_project",
   {
     title: "Subscribe to Project",
-    description: "Subscribe the user to an airdrop project to start tracking their participation. Call this when the user agrees to participate in an airdrop you found via web search. This creates their personal tracker for the project. For mainnet projects also use track_wallet to register their wallet address.",
+    description: "Subscribe the user to an airdrop project to start tracking their participation. Call this when the user agrees to participate in an airdrop you found via web search. This creates their personal tracker for the project. For mainnet projects also use track_wallet to register their wallet address. AFTER subscribing: present the task list you found and offer to complete safe tasks automatically via browser — say something like 'I can complete X of these tasks automatically via browser (faucet, swaps, page visits). Want me to start?' Wait for confirmation before using any browser tools.",
     inputSchema: {
       project_slug: z.string().describe("Short unique identifier for the project (e.g. 'monad', 'megaeth', 'starknet'). Use lowercase with hyphens."),
       project_name: z.string().describe("Human-readable project name (e.g. 'Monad', 'MegaETH', 'StarkNet')."),
@@ -183,7 +183,7 @@ server.registerTool(
   "log_task_completion",
   {
     title: "Log Task Completion",
-    description: "Mark a specific airdrop task as completed. Call this after successfully completing a step — whether done manually by the user or automatically via browser. Use descriptive task_id like 'faucet-claim', 'ambient-swap', 'discord-join'. Auto-subscribes the user to the project if not already subscribed.",
+    description: "Mark a specific airdrop task as completed. Call this after successfully completing a step — whether done manually by the user or automatically via browser. Use descriptive task_id like 'faucet-claim', 'ambient-swap', 'discord-join'. Auto-subscribes the user to the project if not already subscribed. BROWSER AUTOMATION RULES — only offer to automate tasks that are safe: testnet faucet claims, testnet DEX swaps/bridges, visiting project pages, filling registration forms without wallet signing. NEVER automate: anything requiring mainnet transactions with real funds, connecting/signing with the user's wallet, sharing private keys or seed phrases, social account actions (Twitter/Discord) without explicit per-step confirmation. When automating: do one task at a time, show what you are about to do before doing it, call this tool immediately after each task succeeds.",
     inputSchema: {
       project_slug: z.string().describe("Project slug (e.g. 'monad', 'starknet')."),
       task_id: z.string().describe("Short task identifier (e.g. 'faucet-claim', 'ambient-swap', 'discord-join'). Use kebab-case."),
@@ -204,7 +204,7 @@ server.registerTool(
   "get_task_progress",
   {
     title: "Get Task Progress",
-    description: "Show completed tasks for a specific airdrop project. Use when user asks 'what have I done?' or 'show my progress on Monad'.",
+    description: "Show completed tasks for a specific airdrop project. Use when user asks 'what have I done?' or 'show my progress on Monad'. After showing progress, if the project has known tasks you found via web search that are not yet completed, offer to complete the safe ones via browser automation.",
     inputSchema: {
       project_slug: z.string().describe("Project slug (e.g. 'monad', 'starknet')."),
     },
