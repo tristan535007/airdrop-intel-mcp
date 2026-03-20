@@ -4,7 +4,7 @@
  */
 
 import { searchProjects, getProjectBySlug, getUpcomingSnapshots } from "./lib/airdrop-data.js";
-import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser, markTaskComplete, getCompletedTasks } from "./lib/db.js";
+import { addTrackedWallet, getTrackedWallets, getUserStats, getOrCreateUserByMcpizeKey, getOrCreateUser, markTaskComplete, getCompletedTasks, addClaimedAirdrop } from "./lib/db.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 
 // ============================================================================
@@ -271,6 +271,32 @@ export async function getTaskProgress(projectId: string, userId: string) {
     completed_count: completed.length,
     progress_pct: Math.round((completed.length / tasks.length) * 100),
     tasks,
+  };
+}
+
+// ============================================================================
+// Tool: log_claimed_airdrop
+// ============================================================================
+
+export async function logClaimedAirdrop(projectId: string, userId: string, tokensReceived: string, usdValue = 0) {
+  const project = getProjectBySlug(projectId);
+  if (!project) {
+    return { success: false, message: `Project "${projectId}" not found. Use search_airdrops to find valid project IDs.` };
+  }
+  const user = await getOrCreateUser(userId);
+  await addClaimedAirdrop(user.id, projectId, tokensReceived, usdValue);
+  const completed = await getCompletedTasks(user.id, projectId);
+  return {
+    success: true,
+    project_slug: projectId,
+    project_name: project.name,
+    tokens_received: tokensReceived,
+    usd_value: usdValue,
+    message: `Recorded: ${tokensReceived}${usdValue ? ` (~$${usdValue})` : ""} from ${project.name}.`,
+    participation_summary: {
+      tasks_completed: completed.length,
+      tasks_total: project.tasks.length,
+    },
   };
 }
 

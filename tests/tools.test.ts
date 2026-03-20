@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initDb } from "../src/lib/db.js";
-import { searchAirdrops, getAirdropDetails, trackWallet, getWalletStatus, getPortfolio, getUpcomingSnapshotsList, logTaskCompletion, getTaskProgress } from "../src/tools.js";
+import { searchAirdrops, getAirdropDetails, trackWallet, getWalletStatus, getPortfolio, getUpcomingSnapshotsList, logTaskCompletion, getTaskProgress, logClaimedAirdrop } from "../src/tools.js";
 
 beforeAll(async () => {
   await initDb();
@@ -250,6 +250,40 @@ describe("getTaskProgress", () => {
 
   it("returns error for unknown project", async () => {
     const result = await getTaskProgress("unknown-xyz", PROGRESS_USER);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// log_claimed_airdrop
+// ============================================================================
+
+const CLAIM_USER = `test-user-claim-${Date.now()}`;
+
+describe("logClaimedAirdrop", () => {
+  it("logs a claimed airdrop with usd_value", async () => {
+    const result = await logClaimedAirdrop("monad", CLAIM_USER, "1500 MON", 750);
+    expect(result.success).toBe(true);
+    expect(result.project_slug).toBe("monad");
+    expect(result.tokens_received).toBe("1500 MON");
+    expect(result.usd_value).toBe(750);
+  });
+
+  it("logs a claimed airdrop without usd_value", async () => {
+    const result = await logClaimedAirdrop("starknet", CLAIM_USER, "200 STRK");
+    expect(result.success).toBe(true);
+    expect(result.usd_value).toBe(0);
+  });
+
+  it("includes tasks_completed in summary", async () => {
+    await logTaskCompletion("monad", "monad-faucet", CLAIM_USER);
+    const result = await logClaimedAirdrop("monad", CLAIM_USER, "1500 MON", 750);
+    expect(result.participation_summary.tasks_completed).toBeGreaterThanOrEqual(1);
+    expect(result.participation_summary.tasks_total).toBeGreaterThan(0);
+  });
+
+  it("returns error for unknown project", async () => {
+    const result = await logClaimedAirdrop("unknown-xyz", CLAIM_USER, "100 XYZ");
     expect(result.success).toBe(false);
   });
 });

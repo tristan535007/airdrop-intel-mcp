@@ -172,6 +172,10 @@ export async function logToolCall(userId: number | null, toolName: string, chann
 // Task completion helpers
 // ============================================================================
 
+export async function addClaimedAirdrop(userId: number, projectSlug: string, tokensReceived: string, usdValue = 0) {
+  await db.insert(claimed_airdrops).values({ user_id: userId, project_slug: projectSlug, tokens_received: tokensReceived, usd_value: usdValue });
+}
+
 export async function markTaskComplete(userId: number, projectSlug: string, taskId: string, notes?: string) {
   await db.insert(task_completions).values({ user_id: userId, project_slug: projectSlug, task_id: taskId, notes: notes ?? null })
     .onConflictDoNothing();

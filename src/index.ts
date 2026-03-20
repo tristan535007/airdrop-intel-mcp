@@ -14,6 +14,7 @@ import {
   getOrCreateUserByMcpizeKey,
   logTaskCompletion,
   getTaskProgress,
+  logClaimedAirdrop,
 } from "./tools.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 import { initDb } from "./lib/db.js";
@@ -249,6 +250,27 @@ server.registerTool(
   async ({ project_id }) => {
     const user_id = getCurrentUserId();
     const result = await getTaskProgress(project_id, user_id);
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
+// ---- log_claimed_airdrop ----
+server.registerTool(
+  "log_claimed_airdrop",
+  {
+    title: "Log Claimed Airdrop",
+    description: "Record that you received tokens from an airdrop. Use this after claiming your reward — it saves the token amount and USD value to your history and shows a participation summary. Feeds into get_portfolio total earnings.",
+    inputSchema: {
+      project_id: z.string().describe("Project slug (e.g. 'monad', 'starknet'). Get from search_airdrops."),
+      tokens_received: z.string().describe("Tokens received as a string (e.g. '1500 MON', '200 STRK')."),
+      usd_value: z.number().optional().describe("Approximate USD value at time of claim (optional)."),
+    },
+  },
+  async ({ project_id, tokens_received, usd_value }) => {
+    const user_id = getCurrentUserId();
+    const result = await logClaimedAirdrop(project_id, user_id, tokens_received, usd_value ?? 0);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
