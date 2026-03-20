@@ -15,6 +15,13 @@
       "when": 1774000212985,
       "tag": "0001_lethal_reavers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1774062000000,
+      "tag": "0002_nanoid_pks",
+      "breakpoints": true
     }
   ]
 }
