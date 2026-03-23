@@ -6,6 +6,7 @@ const cache = new NodeCache({ stdTTL: 300 });
 
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+const TWITTER_RAPIDAPI_HOST = process.env.TWITTER_RAPIDAPI_HOST;
 
 // ============================================================================
 // Etherscan — on-chain activity
@@ -130,6 +131,75 @@ export interface CryptoEvent {
   type: string;
   coin: string;
   source: string;
+}
+
+// ============================================================================
+// Twitter/X search via RapidAPI wrapper
+// ============================================================================
+
+export interface Tweet {
+  id: string;
+  text: string;
+  author: string;
+  date: string;
+  url: string;
+  likes: number;
+  retweets: number;
+}
+
+export async function searchTwitterAirdrops(query: string, limit = 10): Promise<Tweet[]> {
+  if (!TWITTER_RAPIDAPI_HOST || !RAPIDAPI_KEY) return [];
+
+  const cacheKey = `twitter:${query}:${limit}`;
+  const cached = cache.get<Tweet[]>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    // twitter135 API: GET /Search/?q=...&count=N&type=Top
+    const res = await axios.get(`https://${TWITTER_RAPIDAPI_HOST}/Search/`, {
+      params: { q: query, count: limit, type: "Top" },
+      headers: {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": TWITTER_RAPIDAPI_HOST,
+      },
+      timeout: 10000,
+    });
+
+    const data = res.data;
+    // twitter135 returns { timeline: [{ tweet: {...} }] } or flat array
+    const rawItems: unknown[] = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.timeline)
+      ? data.timeline
+      : Array.isArray(data?.data)
+      ? data.data
+      : [];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tweets: Tweet[] = (rawItems as any[])
+      .map((item) => {
+        const t = item?.tweet ?? item;
+        const author = t.user ?? t.author ?? {};
+        return {
+          id: t.id_str || t.id || "",
+          text: t.full_text || t.text || "",
+          author: author.screen_name || author.username || author.name || "unknown",
+          date: t.created_at || t.date || "",
+          url: t.url || (t.id_str ? `https://x.com/i/status/${t.id_str}` : ""),
+          likes: t.favorite_count ?? t.public_metrics?.like_count ?? 0,
+          retweets: t.retweet_count ?? t.public_metrics?.retweet_count ?? 0,
+        };
+      })
+      .filter((t) => t.text);
+
+    if (tweets.length > 0) {
+      cache.set(cacheKey, tweets, 7200); // 2 hour cache
+    }
+    return tweets;
+  } catch (err) {
+    console.error("[Twitter] Error searching tweets:", err);
+    return [];
+  }
 }
 
 export async function getAirdropEvents(): Promise<CryptoEvent[]> {

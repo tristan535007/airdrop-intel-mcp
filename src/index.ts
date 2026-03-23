@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express, { Request, Response } from "express";
@@ -14,6 +15,7 @@ import {
   getTaskProgress,
   logClaimedAirdrop,
   untrackProject,
+  getAirdropNews,
 } from "./tools.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 import { initDb } from "./lib/db.js";
@@ -259,6 +261,33 @@ server.registerTool(
   }
 );
 
+// ---- get_airdrop_news ----
+server.registerTool(
+  "get_airdrop_news",
+  {
+    title: "Get Airdrop News from Twitter/X",
+    description:
+      "Search recent Twitter/X posts about airdrop conditions, eligibility requirements, snapshot dates, and project announcements. " +
+      "Use this to discover what crypto projects are saying about their upcoming airdrops. " +
+      'Call with a specific project name (e.g. "monad airdrop conditions") or a broad query ("new airdrop announcements 2026"). ' +
+      "Results include tweet text, author, engagement (likes/retweets), and direct URL. " +
+      "If this returns empty tweets with a note about TWITTER_RAPIDAPI_HOST — fall back to web search for the same query.",
+    inputSchema: {
+      query: z
+        .string()
+        .optional()
+        .describe(
+          'Search query (e.g. "monad airdrop conditions", "megaeth testnet airdrop", "starknet snapshot 2026"). Default: "crypto airdrop conditions"'
+        ),
+      limit: z.number().optional().describe("Max tweets to return (default: 10, max: 25)"),
+    },
+  },
+  async ({ query, limit }) => {
+    const result = await getAirdropNews(query, limit);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
 // ============================================================================
 // Express App
 // ============================================================================
@@ -354,7 +383,8 @@ const httpServer = app.listen(port, () => {
   console.log(`  ${chalk.gray("MCP:")}    http://localhost:${port}/mcp`);
   console.log(`  ${chalk.gray("Tools:")}  subscribe_to_project, track_wallet, get_wallet_status,`);
   console.log(`           get_portfolio, check_sybil_risk, log_task_completion,`);
-  console.log(`           get_task_progress, untrack_project, log_claimed_airdrop`);
+  console.log(`           get_task_progress, untrack_project, log_claimed_airdrop,`);
+  console.log(`           get_airdrop_news`);
   if (isDev) {
     console.log();
     console.log(chalk.gray("─".repeat(60)));

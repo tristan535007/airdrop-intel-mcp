@@ -17,6 +17,9 @@ secrets:
   - name: RAPIDAPI_KEY
     description: "RapidAPI key for Crypto Events Calendar airdrop listings (free at rapidapi.com)"
     required: false
+  - name: TWITTER_RAPIDAPI_HOST
+    description: "RapidAPI host for Twitter/X search (e.g. twttrapi.p.rapidapi.com). Subscribe to a Twitter search API on rapidapi.com, then set this to the host shown in the API docs."
+    required: false
   - name: TELEGRAM_BOT_TOKEN
     description: "Telegram bot token from @BotFather (required for Telegram notifications)"
     required: false

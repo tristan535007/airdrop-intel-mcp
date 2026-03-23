@@ -19,6 +19,7 @@ import {
   getSubscribedProjects,
 } from "./lib/db.js";
 import { checkSybilRisk } from "./lib/sybil.js";
+import { searchTwitterAirdrops, Tweet } from "./lib/api-client.js";
 
 // ============================================================================
 // Tool: subscribe_to_project
@@ -248,6 +249,34 @@ export async function logClaimedAirdrop(projectSlug: string, userId: string, tok
     message: `Recorded: ${tokensReceived}${usdValue ? ` (~$${usdValue})` : ""} from ${projectSlug}.`,
     tasks_completed: completed.length,
   };
+}
+
+// ============================================================================
+// Tool: get_airdrop_news
+// ============================================================================
+
+export async function getAirdropNews(query = "crypto airdrop conditions", limit = 10): Promise<{
+  tweets: Tweet[];
+  source: string;
+  query: string;
+  count?: number;
+  note?: string;
+}> {
+  const safeLimit = Math.min(limit, 25);
+  const tweets = await searchTwitterAirdrops(query, safeLimit);
+
+  if (tweets.length === 0) {
+    return {
+      tweets: [],
+      source: "twitter",
+      query,
+      note: process.env.TWITTER_RAPIDAPI_HOST
+        ? "No tweets found for this query. Try a different search term."
+        : "TWITTER_RAPIDAPI_HOST not configured. Use web search instead.",
+    };
+  }
+
+  return { tweets, source: "twitter", query, count: tweets.length };
 }
 
 // Re-export for use in index.ts
