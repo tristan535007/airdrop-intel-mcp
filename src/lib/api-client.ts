@@ -155,9 +155,9 @@ export async function searchTwitterAirdrops(query: string, limit = 10): Promise<
   if (cached) return cached;
 
   try {
-    // twitter135 API: GET /Search/?q=...&count=N&type=Top
-    const res = await axios.get(`https://${TWITTER_RAPIDAPI_HOST}/Search/`, {
-      params: { q: query, count: limit, type: "Top" },
+    // twitter-api45: GET /search.php?query=...&search_type=Top
+    const res = await axios.get(`https://${TWITTER_RAPIDAPI_HOST}/search.php`, {
+      params: { query, search_type: "Top" },
       headers: {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
         "X-RapidAPI-Host": TWITTER_RAPIDAPI_HOST,
@@ -166,28 +166,26 @@ export async function searchTwitterAirdrops(query: string, limit = 10): Promise<
     });
 
     const data = res.data;
-    // twitter135 returns { timeline: [{ tweet: {...} }] } or flat array
-    const rawItems: unknown[] = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.timeline)
+    // twitter-api45 returns { status: "ok", timeline: [{tweet_id, screen_name, text, favorites, retweets, ...}] }
+    const rawItems: unknown[] = Array.isArray(data?.timeline)
       ? data.timeline
-      : Array.isArray(data?.data)
-      ? data.data
+      : Array.isArray(data)
+      ? data
       : [];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const tweets: Tweet[] = (rawItems as any[])
+      .filter((item) => item?.type === "tweet" || item?.tweet_id)
       .map((item) => {
-        const t = item?.tweet ?? item;
-        const author = t.user ?? t.author ?? {};
+        const id = item.tweet_id || item.id_str || item.id || "";
         return {
-          id: t.id_str || t.id || "",
-          text: t.full_text || t.text || "",
-          author: author.screen_name || author.username || author.name || "unknown",
-          date: t.created_at || t.date || "",
-          url: t.url || (t.id_str ? `https://x.com/i/status/${t.id_str}` : ""),
-          likes: t.favorite_count ?? t.public_metrics?.like_count ?? 0,
-          retweets: t.retweet_count ?? t.public_metrics?.retweet_count ?? 0,
+          id,
+          text: item.text || item.full_text || "",
+          author: item.screen_name || item.user?.screen_name || "unknown",
+          date: item.created_at || "",
+          url: id ? `https://x.com/i/status/${id}` : "",
+          likes: item.favorites ?? item.favorite_count ?? 0,
+          retweets: item.retweets ?? item.retweet_count ?? 0,
         };
       })
       .filter((t) => t.text);
@@ -208,7 +206,7 @@ export async function getAirdropEvents(): Promise<CryptoEvent[]> {
   if (cached) return cached;
 
   if (!RAPIDAPI_KEY) {
-    return []; // No key — return empty, curated data is used as fallback
+    return []; // No key — return empty, Claude will fall back to web search
   }
 
   try {
