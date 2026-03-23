@@ -75,7 +75,7 @@ server.registerTool(
   "subscribe_to_project",
   {
     title: "Subscribe to Project",
-    description: "Subscribe the user to an airdrop project to start tracking their participation. Call this when the user agrees to participate in an airdrop you found via web search. This creates their personal tracker for the project. For mainnet projects also use track_wallet to register their wallet address. AFTER subscribing: present the task list you found and offer to complete safe tasks automatically via browser — say something like 'I can complete X of these tasks automatically via browser (faucet, swaps, page visits). Want me to start?' Wait for confirmation before using any browser tools.",
+    description: "Subscribe the user to an airdrop project to start tracking their participation. Call this when the user agrees to participate in an airdrop you found via Twitter or web search. This creates their personal tracker for the project. For mainnet projects also use track_wallet to register their wallet address. AFTER subscribing: present the task list you found and offer to complete safe tasks automatically via browser — say something like 'I can complete X of these tasks automatically via browser (faucet, swaps, page visits). Want me to start?' Wait for confirmation before using any browser tools.",
     inputSchema: {
       project_slug: z.string().describe("Short unique identifier for the project (e.g. 'monad', 'megaeth', 'starknet'). Use lowercase with hyphens."),
       project_name: z.string().describe("Human-readable project name (e.g. 'Monad', 'MegaETH', 'StarkNet')."),
@@ -96,7 +96,7 @@ server.registerTool(
   "track_wallet",
   {
     title: "Track Wallet",
-    description: "Register a wallet address for a specific airdrop project. Use for mainnet/snapshot-based projects where on-chain activity needs to be tracked. After adding a wallet the user's address will be monitored for the snapshot deadline.",
+    description: "Register a wallet address for a specific airdrop project. Use for mainnet/snapshot-based projects where on-chain activity needs to be tracked. After adding a wallet the user's address will be monitored for the snapshot deadline. AFTER a successful add (success: true): immediately call log_task_completion with task_id 'connect-wallet' for this project so the task appears as done in progress reports.",
     inputSchema: {
       address: z.string().describe("Ethereum wallet address (0x...)"),
       project_slug: z.string().describe("Project slug (e.g. 'starknet'). Must match the slug used in subscribe_to_project."),
@@ -267,9 +267,10 @@ server.registerTool(
   {
     title: "Get Airdrop News from Twitter/X",
     description:
+      "ALWAYS call this FIRST whenever the user asks about airdrops, new projects to farm, or wants a list of opportunities — Twitter has the most current alpha before it reaches news sites. " +
       "Search recent Twitter/X posts about airdrop conditions, eligibility requirements, snapshot dates, and project announcements. " +
-      "Use this to discover what crypto projects are saying about their upcoming airdrops. " +
-      'Call with a specific project name (e.g. "monad airdrop conditions") or a broad query ("new airdrop announcements 2026"). ' +
+      'Call with a broad query first (e.g. "new airdrop announcements 2026", "crypto airdrop conditions") to build the initial list, then call again with a specific project name (e.g. "monad airdrop conditions") for details. ' +
+      "Use web search only AFTER this tool — to expand the list with projects not on Twitter, or to get official task details for a specific project. " +
       "Results include tweet text, author, engagement (likes/retweets), and direct URL. " +
       "If this returns empty tweets with a note about TWITTER_RAPIDAPI_HOST — fall back to web search for the same query.",
     inputSchema: {

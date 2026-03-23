@@ -24,6 +24,8 @@ WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
+# Copy Drizzle migrations (required at runtime for migrate() on startup)
+COPY --from=builder /app/drizzle ./drizzle
 
 # Create data directory with correct permissions before switching user
 RUN mkdir -p /app/data && chown -R node:node /app/data
