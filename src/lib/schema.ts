@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, real } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, real, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
@@ -52,7 +52,9 @@ export const task_completions = sqliteTable("task_completions", {
   task_id: text("task_id").notNull(),
   completed_at: text("completed_at").notNull().default(sql`(datetime('now'))`),
   notes: text("notes"),
-});
+}, (t) => ({
+  uniq: uniqueIndex("task_completions_user_project_task_uniq").on(t.user_id, t.project_slug, t.task_id),
+}));
 
 export type User = typeof users.$inferSelect;
 export type TrackedWallet = typeof tracked_wallets.$inferSelect;

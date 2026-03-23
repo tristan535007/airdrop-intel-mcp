@@ -225,6 +225,8 @@ describe("logTaskCompletion", () => {
     await logTaskCompletion("monad", "faucet-claim", user);
     const result = await logTaskCompletion("monad", "faucet-claim", user);
     expect(result.success).toBe(true);
+    const progress = await getTaskProgress("monad", user);
+    expect(progress.completed_count).toBe(1);
   });
 
   it("auto-subscribes user to project", async () => {
