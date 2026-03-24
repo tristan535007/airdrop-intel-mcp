@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { initDb } from "../src/lib/db.js";
 import {
   subscribeToAirdrop,
@@ -9,7 +9,14 @@ import {
   logTaskCompletion,
   getTaskProgress,
   logClaimedAirdrop,
+  getAirdropNews,
 } from "../src/tools.js";
+
+vi.mock("../src/lib/api-client.js", () => ({
+  searchTwitterAirdrops: vi.fn().mockResolvedValue(
+    Array.from({ length: 10 }, (_, i) => ({ id: String(i), text: `airdrop ${i}`, author: "test" }))
+  ),
+}));
 
 beforeAll(async () => {
   await initDb();
@@ -271,6 +278,27 @@ describe("getTaskProgress", () => {
   it("returns zero for new user", async () => {
     const result = await getTaskProgress("monad", `brand-new-${Date.now()}`);
     expect(result.completed_count).toBe(0);
+  });
+});
+
+// ============================================================================
+// get_airdrop_news
+// ============================================================================
+
+describe("getAirdropNews", () => {
+  it("free user gets max 3 results", async () => {
+    const result = await getAirdropNews("crypto airdrop", 10, false);
+    expect(result.tweets.length).toBeLessThanOrEqual(3);
+  });
+
+  it("pro user gets up to 10 results", async () => {
+    const result = await getAirdropNews("crypto airdrop", 10, true);
+    expect(result.tweets.length).toBe(10);
+  });
+
+  it("free user requesting fewer than 3 gets that amount", async () => {
+    const result = await getAirdropNews("crypto airdrop", 2, false);
+    expect(result.tweets.length).toBeLessThanOrEqual(2);
   });
 });
 

@@ -255,15 +255,15 @@ export async function logClaimedAirdrop(projectSlug: string, userId: string, tok
 // Tool: get_airdrop_news
 // ============================================================================
 
-export async function getAirdropNews(query = "crypto airdrop conditions", limit = 10): Promise<{
+export async function getAirdropNews(query = "crypto airdrop conditions", limit = 10, isPro = false): Promise<{
   tweets: Tweet[];
   source: string;
   query: string;
   count?: number;
   note?: string;
 }> {
-  const safeLimit = Math.min(limit, 25);
-  const tweets = await searchTwitterAirdrops(query, safeLimit);
+  const maxLimit = isPro ? Math.min(limit, 25) : Math.min(limit, 3);
+  const tweets = (await searchTwitterAirdrops(query, maxLimit)).slice(0, maxLimit);
 
   if (tweets.length === 0) {
     return {

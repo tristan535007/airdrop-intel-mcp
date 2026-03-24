@@ -44,21 +44,21 @@ describe("getAirdropNews", () => {
     expect(result.query).toBe("monad airdrop conditions");
   });
 
-  it("uses default query and limit when called with no args", async () => {
+  it("uses default query and limit when called with no args (free tier caps at 3)", async () => {
     vi.mocked(searchTwitterAirdrops).mockResolvedValue([]);
     await getAirdropNews();
-    expect(searchTwitterAirdrops).toHaveBeenCalledWith("crypto airdrop conditions", 10);
+    expect(searchTwitterAirdrops).toHaveBeenCalledWith("crypto airdrop conditions", 3);
   });
 
-  it("caps limit at 25", async () => {
+  it("caps limit at 25 for pro user", async () => {
     vi.mocked(searchTwitterAirdrops).mockResolvedValue([]);
-    await getAirdropNews("test query", 100);
+    await getAirdropNews("test query", 100, true);
     expect(searchTwitterAirdrops).toHaveBeenCalledWith("test query", 25);
   });
 
-  it("respects limit below 25", async () => {
+  it("respects limit below 25 for pro user", async () => {
     vi.mocked(searchTwitterAirdrops).mockResolvedValue([]);
-    await getAirdropNews("test query", 5);
+    await getAirdropNews("test query", 5, true);
     expect(searchTwitterAirdrops).toHaveBeenCalledWith("test query", 5);
   });
 

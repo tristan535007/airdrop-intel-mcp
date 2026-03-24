@@ -284,7 +284,7 @@ server.registerTool(
     },
   },
   async ({ query, limit }) => {
-    const result = await getAirdropNews(query, limit);
+    const result = await getAirdropNews(query, limit, getCurrentUserIsPro());
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 );
