@@ -1,123 +1,165 @@
 ---
 name: test-airdrop-mcp
-description: End-to-end QA run for airdrop-intel-mcp — tests all tools as a real user via curl against a live server
-allowed-tools: Bash, AskUserQuestion, Read
+description: End-to-end QA run for airdrop-intel-mcp — opens claude.ai/new, has a natural Russian conversation to discover real airdrops, picks one, then tests all tools against it
+allowed-tools: Bash, AskUserQuestion, Read, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__find, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__gif_creator, mcp__claude-in-chrome__computer
 ---
 
-# Airdrop Intel MCP — QA Test Runner
+# Airdrop Intel MCP — QA Test Runner (claude.ai)
 
-Runs through all MCP tools as a real user. Checks happy paths, edge cases, and tier enforcement. Reports results in a clean pass/fail table at the end.
+Runs a natural Russian conversation in claude.ai/new. First discovers real airdrops, picks one, then tests all MCP tools against it.
 
-## Setup
+**CRITICAL: Every scene happens inside the browser via claude-in-chrome. Never call MCP tools directly. Never use curl to test. Only allowed outside browser: reading `src/index.ts`, health check, reading `.env`.**
 
-1. Read `src/index.ts` to discover the current list of registered tools (look for `server.registerTool(` calls). Extract tool names and their inputSchema fields. This is the source of truth — never assume which tools exist.
+All messages in Russian.
 
-2. Ask the user two questions with AskUserQuestion (send both in one call):
+---
 
-   **Question 1** — header: "Environment", question: "Where to run the tests?"
-   Options:
-   - "Local (localhost:8080)" — server is already running locally
-   - "ngrok tunnel" — local server exposed via ngrok
-   - "Production URL" — deployed server
+## Step 1 — Discover tools
 
-   **Question 2** — header: "Pro tier", question: "Test pro tier scenarios?"
-   Options:
-   - "Yes — test both free and pro" — runs free + pro user tests
-   - "No — free tier only" — skips pro user tests
+Read `src/index.ts`, extract all `server.registerTool(` names. Keep this list — every tool must be exercised.
 
-3. Based on the environment answer:
-   - **Local** → use `http://localhost:8080/mcp`, check health first with `curl http://localhost:8080/health`
-   - **ngrok** → ask for the ngrok URL (free text), use `<ngrok-url>/mcp`
-   - **Production** → ask for the production URL (free text), use as-is
+## Step 2 — Ask setup questions
 
-4. Generate unique test user IDs for this run:
-   - `FREE_USER` = `test-qa-free-<timestamp>` (e.g. `test-qa-free-1711234567`)
-   - `PRO_USER` = `test-qa-pro-<timestamp>` (only if pro tier selected)
+AskUserQuestion, two questions at once:
 
-5. Announce the plan:
-   ```
-   Tools found: <list from index.ts>
-   Running QA against: <BASE_URL>
-   Free user: <FREE_USER>
-   Pro user:  <PRO_USER>
-   ```
+**Q1** header: "ngrok URL", "Какой ngrok URL у MCP сервера?"
+Free text.
 
-## Test Execution
+**Q2** header: "MCP подключён?", "MCP сервер уже подключён в коннекторах claude.ai?"
+- "Да, уже подключён"
+- "Нет" — tell user: Settings → Connectors → Add → `<ngrok-url>/mcp`, then confirm.
 
-Run each test with curl:
+## Step 3 — Health check
 
 ```bash
-curl -s -X POST <BASE_URL> \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "X-MCPize-User-ID: <USER_ID>" \
-  [-H "X-MCPize-Subscription-ID: pro-test" for pro user tests] \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"<TOOL>","arguments":<ARGS>}}'
+curl -s <ngrok-url>/health
+```
+Stop if not responding.
+
+## Step 4 — Open claude.ai/new
+
+`mcp__claude-in-chrome__tabs_context_mcp` — reuse existing claude.ai/new tab or open new one. Wait for chat input.
+
+---
+
+## Step 5 — Discovery conversation (Phase 1)
+
+This phase finds a real airdrop to test with. Send messages one by one, wait for full response each time.
+
+**Message 1:**
+> Какие актуальные крипто аирдропы сейчас есть? Дай топ 3–5 с кратким описанием.
+
+Wait for response. Claude should use web search and list real current projects.
+
+**Read the response** — extract the list of projects Claude suggested.
+
+**Message 2** — ask for details on the most interesting one:
+> Расскажи подробнее про [первый проект из списка] — какие задания нужно выполнить, есть ли дедлайн снапшота, какой токен?
+
+Wait for response. Extract: project name, slug idea, tasks list, deadline if any, token ticker if known.
+
+**Message 3** — commit to this project:
+> Отлично, давай начнём с него. Подпиши меня на этот аирдроп.
+
+**Verify:** `subscribe_to_project` called, response confirms subscription.
+Record: PROJECT = name Claude used, TASKS = task list from response.
+
+---
+
+## Step 6 — Full tool coverage (Phase 2)
+
+Now exercise every remaining tool using the project from Phase 1. Send messages one by one.
+
+**Message rules:**
+- Write as a real user who knows nothing about MCP tools or their names
+- Never mention tool names, never say "вызови", "используй инструмент" и т.п.
+- Just natural questions and requests a real person would ask
+
+**For each message:** wait for full response → `mcp__claude-in-chrome__get_page_text` → verify the expected tool was called (you can see tool calls in Claude's response) → record ✅ / ❌.
+**Never stop on failure.**
+
+---
+
+> Добавь мой кошелёк для этого проекта. Какой адрес посоветуешь использовать для демо?
+
+Verify: `track_wallet` called.
+
+---
+
+> Перед тем как начать делать задания, насколько мой кошелёк выглядит подозрительно для систем защиты от ботов?
+
+Verify: `check_sybil_risk` called, risk score in response.
+
+---
+
+*(skip if `get_airdrop_news` not in index.ts)*
+> Что сейчас пишут про условия этого аирдропа в твиттере?
+
+Verify: `get_airdrop_news` called.
+
+---
+
+> Я только что сделал [task 1 from Phase 1] и [task 2 from Phase 1]. Запомни это.
+
+Verify: `log_task_completion` called (likely twice).
+
+---
+
+> Что я уже успел сделать по этому проекту?
+
+Verify: `get_task_progress` called, lists logged tasks.
+
+---
+
+> Покажи всё что ты про меня знаешь — все проекты, кошельки.
+
+Verify: `get_portfolio` called, project and wallet appear.
+
+---
+
+> Когда дедлайн по моим кошелькам?
+
+Verify: `get_wallet_status` called.
+
+---
+
+> Давай представим что аирдроп уже случился и я получил токены. Сохрани это.
+
+Verify: `log_claimed_airdrop` called.
+
+---
+
+> Всё, я закончил с этим проектом. Можешь убрать его.
+
+Verify: `untrack_project` called, project gone from portfolio.
+
+Then:
+> Найди мне сразу два новых актуальных аирдропа и добавь оба.
+
+Verify: первый успешно, второй упирается в лимит. Claude объясняет ограничение по-русски.
+
+---
+
+## Step 7 — GIF and report
+
+Record GIF: `mcp__claude-in-chrome__gif_creator`, name `airdrop-mcp-qa-<YYYY-MM-DD>.gif`.
+
+Print table in chat:
+
+```
+| # | Tool | Сцена | Статус | Заметка |
+|---|------|-------|--------|---------|
 ```
 
-Parse response: result is in `.result.content[0].text` (JSON string). Error response has `.error`.
+`Результат: X/N прошло`
 
-For each test: record PASS ✅ or FAIL ❌ with a short snippet of the actual response.
+List any failures with actual response snippet.
 
-## Test Plan (build dynamically from discovered tools)
+---
 
-For each tool found in `index.ts`, derive tests using these rules:
+## Notes
 
-### Universal tests (apply to every tool)
-- **Happy path** — call with valid minimal args, expect no error
-- **Required fields** — omit a required field, expect validation error
-
-### Per-tool test patterns
-
-**Tools that write data** (create/subscribe/track/log):
-- Happy path with free user
-- Idempotency — call again with same args, expect success not duplicate error
-- If it has a `project_slug` param — test uppercase slug input, expect it normalizes to lowercase
-
-**Tools that enforce free tier** (read from `tools.ts` to identify which ones check `isPro`):
-- Free user blocked on 2nd project — expect error mentioning tier/limit/upgrade
-- Pro user (with `X-MCPize-Subscription-ID` header) succeeds on 2nd project
-
-**Tools that validate addresses** (any tool with `address` param):
-- Valid address (use `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045`)
-- Invalid address (`0xinvalid`) — expect error
-
-**Tools that read data** (get_*/check_*):
-- Call after writing data — verify the written data appears in response
-- Call with no data — expect empty result, not error
-
-**Cleanup tools** (untrack_*):
-- Call and verify data is gone from read tools
-- Verify that the freed slot can be used again (re-subscribe succeeds)
-
-### Test sequencing
-
-Run tests in this order so each builds on the previous state:
-1. Write operations first (subscribe → track → log)
-2. Read operations to verify state
-3. Edge cases (tier limits, invalid input, idempotency)
-4. Cleanup last (untrack)
-5. Post-cleanup verification (slot freed, data gone)
-
-## Report
-
-After all tests, print a markdown table:
-
-```
-| # | Tool | Scenario | Status | Note |
-|---|------|----------|--------|------|
-| 1 | subscribe_to_project | free user 1st project | ✅ | |
-| 2 | subscribe_to_project | idempotent | ✅ | |
-...
-```
-
-Then print:
-```
-Results: X/N passed
-```
-
-If any failed, list them with the actual response received.
-
-## Cleanup note
-
-Use slugs prefixed with `qa-` and user IDs prefixed with `test-qa-`. Safe to leave in DB — they won't interfere with real users.
+- User ID from `DEV_USER_ID` in `.env`
+- Project, tasks, ticker — all come from Claude's own web search in the conversation
+- If a tool from Step 1 list is not covered — add a natural message to trigger it
+- Screenshot and continue if chat gets stuck
