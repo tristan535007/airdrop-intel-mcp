@@ -117,8 +117,10 @@ const isPro = getCurrentUserIsPro();
 
 ## Free vs Pro Tier
 
-- **Free**: track 1 project, all read tools unlimited
-- **Pro**: track unlimited projects (`X-MCPize-Subscription-ID` present = paid subscriber)
+- **Free**: track 1 project, `get_airdrop_news` limited to 3 results, all other read tools unlimited
+- **Pro ($15/mo)**: track unlimited projects, full `get_airdrop_news` feed (up to 25), no limits
+
+(`X-MCPize-Subscription-ID` present = paid subscriber)
 
 Free tier is enforced in three places:
 - `subscribeToAirdrop` — blocks subscribing to 2nd project

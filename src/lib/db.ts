@@ -130,7 +130,7 @@ export async function addTrackedWallet(userId: string, walletAddress: string, pr
     if (subCount >= 1 && !alreadySubscribed) {
       return {
         success: false,
-        message: "FREE_TIER_LIMIT: You can track 1 project on the free plan. Upgrade to Pro ($15/mo) to track unlimited projects.",
+        message: "FREE_TIER_LIMIT: Free plan includes 1 tracked project and up to 3 airdrop news results. Upgrade to Pro ($15/mo) for unlimited projects and full news feed.",
       };
     }
   }

@@ -36,7 +36,7 @@ export async function subscribeToAirdrop(projectSlug: string, projectName: strin
       return {
         success: false,
         upgrade_required: true,
-        message: "FREE_TIER_LIMIT: You can track 1 project on the free plan. Upgrade to Pro ($15/mo) to track unlimited projects.",
+        message: "FREE_TIER_LIMIT: Free plan includes 1 tracked project and up to 3 airdrop news results. Upgrade to Pro ($15/mo) for unlimited projects and full news feed.",
       };
     }
   }
@@ -181,7 +181,7 @@ export async function logTaskCompletion(projectSlug: string, taskId: string, use
         upgrade_required: true,
         project_slug: projectSlug,
         task_id: taskId,
-        message: `Task "${taskId}" logged. FREE_TIER_LIMIT: upgrade to Pro to add ${projectSlug} to your portfolio.`,
+        message: `Task "${taskId}" logged. FREE_TIER_LIMIT: Free plan includes 1 tracked project. Upgrade to Pro ($15/mo) for unlimited projects and full news feed to add ${projectSlug} to your portfolio.`,
       };
     }
     await subscribeToProject(user.id, projectSlug);
