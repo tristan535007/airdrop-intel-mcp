@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { eq, and, count, countDistinct, sum, sql } from "drizzle-orm";
 import { users, tracked_wallets, claimed_airdrops, tool_calls, task_completions, subscribed_projects } from "./schema.js";
+import { PRO_PRICE_LABEL, FREE_TIER_PROJECTS_LIMIT, FREE_TIER_NEWS_LIMIT } from "./constants.js";
 
 export type { User, TrackedWallet } from "./schema.js";
 
@@ -130,7 +131,7 @@ export async function addTrackedWallet(userId: string, walletAddress: string, pr
     if (subCount >= 1 && !alreadySubscribed) {
       return {
         success: false,
-        message: "FREE_TIER_LIMIT: Free plan includes 1 tracked project and up to 3 airdrop news results. Upgrade to Pro ($15/mo) for unlimited projects and full news feed.",
+        message: `FREE_TIER_LIMIT: Free plan includes ${FREE_TIER_PROJECTS_LIMIT} tracked project and up to ${FREE_TIER_NEWS_LIMIT} airdrop news results. Upgrade to Pro (${PRO_PRICE_LABEL}) for unlimited projects and full news feed.`,
       };
     }
   }

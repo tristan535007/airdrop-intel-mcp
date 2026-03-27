@@ -10,6 +10,7 @@ import {
 } from "./tools.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 import { upgradeUserToPro, linkMcpizeKey, getOrCreateUser } from "./lib/db.js";
+import { PRO_PRICE_LABEL } from "./lib/constants.js";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const PRO_PRICE_STARS = parseInt(process.env.PRO_PRICE_STARS || "750");
@@ -348,13 +349,13 @@ bot.command("upgrade", async (ctx) => {
     return ctx.reply("✅ You already have *Pro* plan! Unlimited projects enabled.", { parse_mode: "Markdown" });
   }
 
-  const keyboard = new InlineKeyboard().text(`⭐ Pay ${PRO_PRICE_STARS} Stars (~$15/mo)`, "upgrade_pro");
+  const keyboard = new InlineKeyboard().text(`⭐ Pay ${PRO_PRICE_STARS} Stars (${PRO_PRICE_LABEL})`, "upgrade_pro");
 
   await ctx.reply(
     `⭐ *Upgrade to Pro*\n\n` +
     `*Free:* 1 tracked project\n` +
     `*Pro:* Unlimited projects + priority support\n\n` +
-    `Price: *${PRO_PRICE_STARS} Telegram Stars* (~$15/mo)\n\n` +
+    `Price: *${PRO_PRICE_STARS} Telegram Stars* (${PRO_PRICE_LABEL})\n\n` +
     `Already paid on MCPize? Use /link to connect your account.`,
     { parse_mode: "Markdown", reply_markup: keyboard }
   );

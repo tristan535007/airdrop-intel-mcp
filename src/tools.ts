@@ -20,6 +20,7 @@ import {
 } from "./lib/db.js";
 import { checkSybilRisk } from "./lib/sybil.js";
 import { searchTwitterAirdrops, Tweet } from "./lib/api-client.js";
+import { PRO_PRICE_LABEL, FREE_TIER_NEWS_LIMIT, FREE_TIER_PROJECTS_LIMIT, PRO_TIER_NEWS_LIMIT } from "./lib/constants.js";
 
 // ============================================================================
 // Tool: subscribe_to_project
@@ -36,7 +37,7 @@ export async function subscribeToAirdrop(projectSlug: string, projectName: strin
       return {
         success: false,
         upgrade_required: true,
-        message: "FREE_TIER_LIMIT: Free plan includes 1 tracked project and up to 3 airdrop news results. Upgrade to Pro ($15/mo) for unlimited projects and full news feed.",
+        message: "FREE_TIER_LIMIT: Free plan includes ${FREE_TIER_PROJECTS_LIMIT} tracked project and up to ${FREE_TIER_NEWS_LIMIT} airdrop news results. Upgrade to Pro (${PRO_PRICE_LABEL}) for unlimited projects and full news feed.",
       };
     }
   }
@@ -181,7 +182,7 @@ export async function logTaskCompletion(projectSlug: string, taskId: string, use
         upgrade_required: true,
         project_slug: projectSlug,
         task_id: taskId,
-        message: `Task "${taskId}" logged. FREE_TIER_LIMIT: Free plan includes 1 tracked project. Upgrade to Pro ($15/mo) for unlimited projects and full news feed to add ${projectSlug} to your portfolio.`,
+        message: `Task "${taskId}" logged. FREE_TIER_LIMIT: Free plan includes ${FREE_TIER_PROJECTS_LIMIT} tracked project. Upgrade to Pro (${PRO_PRICE_LABEL}) for unlimited projects and full news feed to add ${projectSlug} to your portfolio.`,
       };
     }
     await subscribeToProject(user.id, projectSlug);
@@ -262,7 +263,7 @@ export async function getAirdropNews(query = "crypto airdrop conditions", limit 
   count?: number;
   note?: string;
 }> {
-  const maxLimit = isPro ? Math.min(limit, 25) : Math.min(limit, 3);
+  const maxLimit = isPro ? Math.min(limit, PRO_TIER_NEWS_LIMIT) : Math.min(limit, FREE_TIER_NEWS_LIMIT);
   const tweets = (await searchTwitterAirdrops(query, maxLimit)).slice(0, maxLimit);
 
   if (tweets.length === 0) {
@@ -276,7 +277,17 @@ export async function getAirdropNews(query = "crypto airdrop conditions", limit 
     };
   }
 
-  return { tweets, source: "twitter", query, count: tweets.length };
+  return {
+    tweets,
+    source: "twitter",
+    query,
+    count: tweets.length,
+    ...(
+      !isPro && {
+        upgrade_note: `Showing ${tweets.length} of ${PRO_TIER_NEWS_LIMIT} available results. Upgrade to Pro (${PRO_PRICE_LABEL}) for the full feed and unlimited project tracking.`,
+      }
+    ),
+  };
 }
 
 // Re-export for use in index.ts
